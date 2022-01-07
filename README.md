@@ -4,6 +4,8 @@
 
 # PowerRemoteDesktop
 
+<img src="Screenshot 2022-01-07 at 16.43.53.png" width="100%"/>
+
 As the name suggests, Power Remote Desktop is a Remote Desktop application entirely coded in PowerShell.
 
 It does not rely in any existing remote desktop application / protocol to function. It is a remote desktop application completely coded from scratch.
