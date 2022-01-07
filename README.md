@@ -12,6 +12,11 @@ Even the Viewer part (Including the GUI) is coded in PowerShell with the help of
 
 ⚠️ This project is actually in its very beginning. Do not use it under a production environment until version is marked as final / stable version.
 
+Tested on:
+
+* Windows 10 - PowerShell Version: 5.1.19041.1320
+* Windows 11 - PowerShell Version: 5.1.22000.282
+
 ## Features
 
 * Captures Remote Desktop Image with support of HDPI.
@@ -58,4 +63,25 @@ I will also improve comments and logging (verbose / normal text) and try to supp
 * [MEDIUM] Improve HDPI Scaling / Quality.
 * [MEDIUM+] Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 ```
+
+## Installation
+
+## Usage
+
+# Disclaimer
+
+We are doing our best to prepare the content of this app. However, PHROZEN SASU cannot
+warranty the expressions and suggestions of the contents, as well as its accuracy.
+In addition, to the extent permitted by the law, PHROZEN SASU shall not be responsible
+for any losses and/or damages due to the usage of the information on our app.
+
+By using our app, you hereby consent to our disclaimer and agree to its terms.
+
+Any links contained in our app may lead to external sites are provided for
+convenience only. Any information or statements that appeared in these sites
+or app are not sponsored, endorsed, or otherwise approved by PHROZEN SASU.
+For these external sites, SubSeven Legacy cannot be held liable for the
+availability of, or the content located on or through it.
+Plus, any losses or damages occurred from using these contents or the internet
+generally.
 
