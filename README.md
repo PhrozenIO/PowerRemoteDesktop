@@ -68,6 +68,57 @@ I will also improve comments and logging (verbose / normal text) and try to supp
 
 ## Usage
 
+### Server
+
+#### Open a new Remote Desktop Server Instance
+
+`PowerRemoteDesktop_Server.psm1` module first need to be imported / available on current PowerShell session.
+
+Call `Invoke-RemoteDesktopServer`
+
+Supported options:
+
+* `ListenAddress`: Define in which interface to listen for new viewer.
+* `ListenPort`: Define in which port to listen for new viewer.
+* `Password`: Define password used during authentication process.
+
+* `CertificateFile`: A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
+* `EncodedCertificate`: A valid X509 Certificate (With Private Key) encoded as a Base64 String.
+
+If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
+
+##### Example
+
+`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -Password "Jade"`
+
+`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -Password "Jade" -CertificateFile "c:\certs\phrozen.p12"`
+
+#### Generate and pass your own X509 Certificate
+
+Passing your own X509 Certificate is very useful if you want to avoid running your PowerShell Instance as Administrator.
+
+You can easily create your own X509 Certificate using OpenSSL Command Line Tool.
+
+##### Generate your Certificate
+
+`openssl req -x509 -sha512 -nodes -days 365 -newkey rsa:4096 -keyout phrozen.key -out phrozen.crt`
+
+Then export the new certificate with Private Key Included.
+
+`openssl pkcs12 -export -out phrozen.p12 -inkey phrozen.key -in phrozen.crt`
+
+##### Use it as file
+
+Pass the certificate file to parameter `CertificateFile`.
+
+##### Use it as Encoded Base64 String
+
+First encode your certificate file as base64 string.
+
+`base64 -i phrozen.p12`
+
+Then pass the encoded string to parameter `EncodedCertificate`.
+
 # Disclaimer
 
 We are doing our best to prepare the content of this app. However, PHROZEN SASU cannot
