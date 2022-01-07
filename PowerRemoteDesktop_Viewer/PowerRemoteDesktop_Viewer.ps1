@@ -991,6 +991,3 @@ function Invoke-RemoteDesktopViewer
 try {  
     Export-ModuleMember -Function Invoke-RemoteDesktopViewer
 } catch {}
-
-#Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -DisableInputControl $true -Password "Jade"
-Invoke-RemoteDesktopViewer -ServerAddress "172.24.197.110" -Password "Jade"
