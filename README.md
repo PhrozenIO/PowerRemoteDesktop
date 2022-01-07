@@ -64,15 +64,55 @@ I will also improve comments and logging (verbose / normal text) and try to supp
 * [MEDIUM+] Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 ```
 
-## Installation
+## Installation (For Viewer and/or Server)
+
+You can use this script both as a PowerShell Module or Raw Script (Pasted, from Encoded Base64 String, DownloadString(...) etc...).
+
+### As a Module
+
+Choose a registered PowerShell Module location (see echo $env:PSModulePath)
+
+Create a folder called PowerRemoteDesktop_[Viewer/Server] and place the PowerRemoteDesktop_[Viewer/Server].psm1 file inside the new folder.
+
+Open a new PowerShell Window and enter Import-Module PowerRemoteDesktop_[Viewer/Server]
+
+The module should be imported with available functions:
+
+* `Invoke-RemoteDesktopViewer` in the case of `PowerRemoteDesktop_Viewer.psm1`
+* `Invoke-RemoteDesktopServer` in the case of `PowerRemoteDesktop_Server.psm1`
+
+### As a Raw Script
+
+You can import both scripts alternatively by:
+
+* Pasting the whole code to a new PowerShell window
+* `. .\PowerRemoteDesktop_[Viewer/Server].psm1`
+* Importing a Base64 encoded version of the code through IEX/Invoke-Expression
+* Remote Location through DownloadString(...) then IEX/Invoke-Expression
+* Your imagination
 
 ## Usage
 
+### Client
+
+`PowerRemoteDesktop_Viewer.psm1` module first need to be imported / installed on current PowerShell session.
+
+Call `Invoke-RemoteDesktopViewer`
+
+Supported options:
+
+* `ServerAddress`: Remote Server Address.
+* `ServerPort`: Remote Server Port.
+* `DisableInputControl`: If set to $true, this option disable control events on form (Mouse Clicks, Moves and Keyboard). This option is generally to true during development when connecting to local machine to avoid funny things.
+* `Password`: Password used during server authentication.
+
+#### Example
+
+`Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort 2801 -Password "Jade"`
+
 ### Server
 
-#### Open a new Remote Desktop Server Instance
-
-`PowerRemoteDesktop_Server.psm1` module first need to be imported / available on current PowerShell session.
+`PowerRemoteDesktop_Server.psm1` module first need to be imported / installed on current PowerShell session.
 
 Call `Invoke-RemoteDesktopServer`
 
