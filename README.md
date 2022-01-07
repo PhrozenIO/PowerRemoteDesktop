@@ -27,6 +27,7 @@ I will also improve comments and logging (verbose / normal text) and try to supp
 
 ## Extended TODO List
 
+```
 * [EASY] Add option for TLS v1.3.        
 * [EASY] Version Synchronization.
 * [EASY] Support Password Protected external Certificates.
@@ -52,4 +53,5 @@ I will also improve comments and logging (verbose / normal text) and try to supp
 * [MEDIUM] Multiple Monitor Support.
 * [MEDIUM] Improve HDPI Scaling / Quality.
 * [MEDIUM+] Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
+```
 
