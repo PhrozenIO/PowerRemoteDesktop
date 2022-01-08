@@ -361,7 +361,7 @@ function Get-X509CertificateFromStore
             certificate when starting a new Remote Desktop Server.
 
         .PARAMETER SubjectName
-            The certificate Subject Name to retrive from local machine certificate store.
+            The certificate Subject Name to retrieve from local machine certificate store.
 
         .EXAMPLE
             Get-X509CertificateFromStore -SubjectName "PowerRemoteDesktop.Server"
@@ -470,7 +470,7 @@ function Resolve-AuthenticationChallenge
             Registered password string for server authentication.
 
         .PARAMETER Candidate
-            Random string used to solve the challenge. This string is public and is set accross network by server.
+            Random string used to solve the challenge. This string is public and is set across network by server.
             Each time a new connection is requested to server, a new candidate is generated.
 
         .EXAMPLE
@@ -497,7 +497,7 @@ function Resolve-AuthenticationChallenge
 class ClientIO {
     <#
         .SYNOPSIS
-            Extended version of TcpClient that automatically create and release
+            Extended version of TcpClient that automatically creates and releases
             required streams with other useful methods.
 
             Supports SSL/TLS.
@@ -770,7 +770,7 @@ class ServerIO {
     [void]Listen() {
         <#
             .SYNOPSIS
-                Start listening on define interface:port.
+                Start listening on defined interface:port.
         #>
         Write-Verbose "Start new server on ""$($this.ListenAddress):$($this.ListenPort)""..."
 
@@ -810,7 +810,7 @@ class ServerIO {
 $global:DesktopStreamScriptBlock = {
     <#
         .SYNOPSIS
-            Threaded code block to send updates of local desktop to remote pper.
+            Threaded code block to send updates of local desktop to remote peer.
 
             This code is expected to be run inside a new PowerShell Runspace.
 
@@ -849,7 +849,7 @@ $global:DesktopStreamScriptBlock = {
                     in final version 1.0
 
             .PARAMETER ScaleFactor
-                Define target monitor scale factor to ajust bounds.
+                Define target monitor scale factor to adjust bounds.
         #>
         param (
             [int] $ScaleFactor = 1
@@ -919,7 +919,7 @@ $global:DesktopStreamScriptBlock = {
                 # Check both stream size.
                 $sendUpdate = ($oldImageStream.Length -ne $imageStream.Length)                
 
-                # If size are equal, compare both Fingerprint to confirm finding.
+                # If sizes are equal, compare both Fingerprint to confirm finding.
                 if (-not $sendUpdate)
                 {            
                     $imageStream.position = 0
@@ -934,7 +934,7 @@ $global:DesktopStreamScriptBlock = {
                 if ($sendUpdate)
                 {
                     # TODO: Get rid of "ToBase64String(...)". Improve a past attempt in RAW that was not sufficiently stable to be used
-                    # In production.
+                    # in production.
                     $imageStream.position = 0 
                     try 
                     {
@@ -1192,7 +1192,7 @@ function Get-SessionInformation
             Generate an object containing few useful information about current machine.
 
         .DESCRIPTION
-            Most important part is the target screen information. Without those information, remote viewer
+            Most important part is the target screen information. Without this information, remote viewer
             will not be able to correctly draw / adjust desktop image and simulate mouse events.
 
             This function is expected to be progressively updated with new required session information.
@@ -1281,7 +1281,7 @@ function Test-Administrator
 {
     <#
         .SYNOPSIS
-            Return true if current PowerShell is running with Administrator privilege otherwise returns no.
+            Return true if current PowerShell is running with Administrator privilege, otherwise return false.
     #>
     $windowsPrincipal = New-Object Security.Principal.WindowsPrincipal(
         [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -1314,7 +1314,7 @@ function Invoke-RemoteDesktopServer
             (!) Absolutely use a complex password.
 
             If no password is specified, then a random complex password will be generated
-            then printed on terminal.
+            and printed on terminal.
 
         .PARAMETER CertificateFile
             A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
@@ -1344,7 +1344,7 @@ function Invoke-RemoteDesktopServer
 
         Write-Banner    
 
-        if ((-not (Test-Administrator)) -and ((-not $CertificateFile) -and (-not $EncodedCertificate)))
+        if (-not (Test-Administrator) -and -not $CertificateFile -and -not $EncodedCertificate)
         {
             throw "When no custom X509 Certificate specified, you must run current PowerShell instance as Administrator."
         }
