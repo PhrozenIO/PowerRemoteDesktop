@@ -955,9 +955,7 @@ $global:DesktopStreamScriptBlock = {
                 else {}              
             }    
             catch 
-            { 
-                ($_ | Out-File "c:\temp\debug$(Get-Date -Format "HH-mm-ss").txt")            
-            }
+            { }
             finally
             {
                 if ($desktopImage)
