@@ -139,7 +139,7 @@ function Resolve-AuthenticationChallenge
             Registered password string for server authentication.
 
         .PARAMETER Candidate
-            Random string used to solve the challenge. This string is public and is set accross network by server.
+            Random string used to solve the challenge. This string is public and is set across network by server.
             Each time a new connection is requested to server, a new candidate is generated.
 
         .EXAMPLE
@@ -283,7 +283,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 class ClientIO {
     <#
         .SYNOPSIS
-            Extended version of TcpClient that automatically create and release
+            Extended version of TcpClient that automatically creates and releases
             required streams with other useful methods.
 
             Supports SSL/TLS.
@@ -533,8 +533,8 @@ function Invoke-RemoteDesktopViewer
             Remote Server Port.
 
         .PARAMETER DisableInputControl
-            If set to $true, this option disable control events on form (Mouse Clicks, Moves and Keyboard)
-            This option is generally to true during development when connecting to local machine to avoid funny
+            If set to $true, this option disables control events on form (Mouse Clicks, Moves and Keyboard)
+            This option is generally set to true during development when connecting to local machine to avoid funny
             things.
 
         .PARAMETER Password
@@ -737,7 +737,7 @@ function Invoke-RemoteDesktopViewer
                             This command is used to simulate keyboard strokes.  
 
                         .PARAMETER Keys
-                            Plainttext keys to be simulated on remote computer.
+                            Plain text keys to be simulated on remote computer.
 
                         .TODO
                             Supports more complex keys (ARROWS ETC...)
@@ -762,9 +762,9 @@ function Invoke-RemoteDesktopViewer
                     <#
                         .SYNOPSIS
                             Transform the virtual mouse (the one in Virtual Desktop Form) coordinates to real remote desktop
-                            screen coordinates (Especially when incomming desktop frames are resized)
+                            screen coordinates (especially when incomming desktop frames are resized)
 
-                            When command is generated it is immediately sent to remote server.
+                            When command is generated, it is immediately sent to remote server.
 
                         .PARAMETER X
                             The position of virtual mouse in horizontal axis.
@@ -944,7 +944,7 @@ function Invoke-RemoteDesktopViewer
             $powershell.Runspace = $runspace
             $asyncResult = $powershell.BeginInvoke()   
 
-            Write-Verbose "Done. Environment successfully created. Showing Virtual Desktop Form"                       
+            Write-Verbose "Done. Environment successfully created. Showing Virtual Desktop Form."                       
 
             $virtualDesktopForm.Form.ShowDialog() | Out-Null                         
         }
