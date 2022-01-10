@@ -75,6 +75,8 @@ Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);' -Name GDI32 -Namespace W;
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern int GetDC(IntPtr hWnd);[DllImport("User32.dll")] public static extern int ReleaseDC(IntPtr hwnd, int hdc);' -Name User32 -Namespace W;
 
+$global:PowerRemoteDesktopVersion = "1.0.beta.2"
+
 enum TransportMode {
     Raw = 1
     Base64 = 2
@@ -1469,6 +1471,7 @@ function Invoke-RemoteDesktopServer
 
                 $sessionInformation | Add-Member -MemberType NoteProperty -Name "TransportMode" -Value $TransportMode
                 $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $Session.Id
+                $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion
 
                 $clientDesktop.Writer.WriteLine(($sessionInformation | ConvertTo-Json -Compress))             
                 

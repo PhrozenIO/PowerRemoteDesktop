@@ -646,11 +646,17 @@ function Invoke-RemoteDesktopViewer
             (-not ($sessionInformation.PSobject.Properties.name -match "ScreenX")) -or
             (-not ($sessionInformation.PSobject.Properties.name -match "ScreenY")) -or
             (-not ($sessionInformation.PSobject.Properties.name -match "SessionId")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "TransportMode"))
+            (-not ($sessionInformation.PSobject.Properties.name -match "TransportMode")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "Version"))
         )
         {
             throw "Invalid System Information Object. Abort connection..."
-        }        
+        }   
+        
+        if ($sessionInformation.Version -ne $global:PowerRemoteDesktopVersion)
+        {
+            throw "PowerRemoteDesktop version mismatch. Local version ""${global:PowerRemoteDesktopVersion}"" != Remote version ""$($sessionInformation.Version)""."
+        }
 
         Write-Verbose "Connect to server for Input Control..."
 
