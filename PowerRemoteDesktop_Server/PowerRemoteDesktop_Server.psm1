@@ -1255,13 +1255,12 @@ function Get-LocalMachineInformation
         Username = [Environment]::UserName
         WindowsVersion = [Environment]::OSVersion.VersionString
 
-        # BEGIN TODO: 
-        # => Send as one object.
-        ScreenWidth = $screenBounds.Width    
-        ScreenHeight = $screenBounds.Height
-        ScreenX = $screenBounds.X
-        ScreenY = $screenBounds.Y
-        # END TODO
+        ScreenInformation = New-Object -TypeName PSCustomObject -Property @{
+            Width = $screenBounds.Width    
+            Height = $screenBounds.Height
+            X = $screenBounds.X
+            Y = $screenBounds.Y
+        }
     }
 }
 

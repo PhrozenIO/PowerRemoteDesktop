@@ -640,13 +640,14 @@ function Invoke-RemoteDesktopViewer
             (-not ($sessionInformation.PSobject.Properties.name -match "MachineName")) -or
             (-not ($sessionInformation.PSobject.Properties.name -match "Username")) -or
             (-not ($sessionInformation.PSobject.Properties.name -match "WindowsVersion")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenWidth")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenHeight")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenX")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenY")) -or
+            #(-not ($sessionInformation.PSobject.Properties.name -match "ScreenWidth")) -or
+            #(-not ($sessionInformation.PSobject.Properties.name -match "ScreenHeight")) -or
+            #(-not ($sessionInformation.PSobject.Properties.name -match "ScreenX")) -or
+            #(-not ($sessionInformation.PSobject.Properties.name -match "ScreenY")) -or            
             (-not ($sessionInformation.PSobject.Properties.name -match "SessionId")) -or
             (-not ($sessionInformation.PSobject.Properties.name -match "TransportMode")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "Version"))
+            (-not ($sessionInformation.PSobject.Properties.name -match "Version")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenInformation"))
         )
         {
             throw "Invalid System Information Object. Abort connection..."
@@ -694,8 +695,8 @@ function Invoke-RemoteDesktopViewer
             $captionHeight = $screenRect.Top - $virtualDesktopForm.Form.Top
 
             $requireResize = (
-                ($locationResolutionInformation.WorkingArea.Width -le $sessionInformation.ScreenWidth) -or
-                (($locationResolutionInformation.WorkingArea.Height - $captionHeight) -le $sessionInformation.ScreenHeight)            
+                ($locationResolutionInformation.WorkingArea.Width -le $sessionInformation.ScreenInformation.Width) -or
+                (($locationResolutionInformation.WorkingArea.Height - $captionHeight) -le $sessionInformation.ScreenInformation.Height)            
             )
 
             $virtualDesktopWidth = 0
@@ -705,13 +706,13 @@ function Invoke-RemoteDesktopViewer
 
             if ($requireResize)
             {            
-                $virtualDesktopWidth = [math]::Round(($sessionInformation.ScreenWidth * $resizeRatio) / 100)
-                $virtualDesktopHeight = [math]::Round(($sessionInformation.ScreenHeight * $resizeRatio) / 100)            
+                $virtualDesktopWidth = [math]::Round(($sessionInformation.ScreenInformation.Width * $resizeRatio) / 100)
+                $virtualDesktopHeight = [math]::Round(($sessionInformation.ScreenInformation.Height * $resizeRatio) / 100)            
             }
             else
             {
-                $virtualDesktopWidth = $sessionInformation.ScreenWidth
-                $virtualDesktopHeight = $sessionInformation.ScreenHeight
+                $virtualDesktopWidth = $sessionInformation.ScreenInformation.Width
+                $virtualDesktopHeight = $sessionInformation.ScreenInformation.Height
             }
 
             # Size Virtual Desktop Form Window
@@ -861,8 +862,8 @@ function Invoke-RemoteDesktopViewer
                         $Y = ($Y * 100) / $resizeRatio
                     }
       
-                    $X += $sessionInformation.ScreenX
-                    $Y += $sessionInformation.ScreenY
+                    $X += $sessionInformation.ScreenInformation.X
+                    $Y += $sessionInformation.ScreenInformation.Y
 
                     $command = (New-MouseCommand -X $X -Y $Y -Button $Button -Type $Type)                    
 
