@@ -832,7 +832,7 @@ $global:DesktopStreamScriptBlock = {
 
             This code is expected to be run inside a new PowerShell Runspace.
 
-        .PARAMETER syncHash.Client
+        .PARAMETER syncHash.Param.Client
             A ClientIO Object containing an active connection. This is where, desktop updates will be
             sent over network.     
 
@@ -972,7 +972,7 @@ $global:DesktopStreamScriptBlock = {
                         {
                             "Raw"
                             {
-                                $syncHash.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
+                                $syncHash.Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
 
                                 $totalBytesSent = 0
 
@@ -994,7 +994,7 @@ $global:DesktopStreamScriptBlock = {
                                     # (OPTIMIZATION IDEA): Try with BinaryStream to save the need of "byte[]"" buffer.
                                     $imageStream.Read($buffer, 0, $buffer.Length) | Out-Null
 
-                                    $syncHash.Client.SSLStream.Write($buffer, 0, $buffer.Length)
+                                    $syncHash.Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
 
                                     $totalBytesSent += $bufferSize                                                               
                                 } until ($totalBytesSent -eq $imageStream.Length)  
@@ -1004,7 +1004,7 @@ $global:DesktopStreamScriptBlock = {
 
                             "Base64"
                             {
-                                $syncHash.Client.Writer.WriteLine(
+                                $syncHash.Param.Client.Writer.WriteLine(
                                     [System.Convert]::ToBase64String($imageStream.ToArray())
                                 )
 
@@ -1133,7 +1133,7 @@ $global:InputControlScriptBlock = {
     {       
         try 
         {            
-            $jsonCommand = $syncHash.Client.Reader.ReadLine()                        
+            $jsonCommand = $syncHash.Param.Client.Reader.ReadLine()                        
         }
         catch
         { 
@@ -1240,6 +1240,10 @@ $global:InputControlScriptBlock = {
     }    
 }
 
+$global:ServerScriptBlock = {
+
+}
+
 function New-SessionId 
 {
     <#
@@ -1291,9 +1295,6 @@ function New-RunSpace
             Notice: the $host variable is used for debugging purpose to write on caller PowerShell
             Terminal.
 
-        .PARAMETER Client
-            A ClientIO object containing an active connection with a remote viewer.
-
         .PARAMETER ScriptBlock
             A PowerShell block of code to be evaluated on the new Runspace.
 
@@ -1306,16 +1307,12 @@ function New-RunSpace
 
     param(
         [Parameter(Mandatory=$True)]
-        [ClientIO] $Client,
-
-        [Parameter(Mandatory=$True)]
         [ScriptBlock] $ScriptBlock,
 
         [PSCustomObject] $Param = $null
     )   
 
-    $syncHash = [HashTable]::Synchronized(@{})
-    $syncHash.Client = $Client
+    $syncHash = [HashTable]::Synchronized(@{})    
     $syncHash.host = $host # For debugging purpose
 
     if ($Param)
@@ -1521,13 +1518,18 @@ function Invoke-RemoteDesktopServer
                 }                
 
                 $param = New-Object -TypeName PSCustomObject -Property @{
-                    TransportMode = $TransportMode                    
+                    TransportMode = $TransportMode    
+                    Client = $clientDesktop                
                 }
 
-                $newRunspace = (New-RunSpace -Client $clientDesktop -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                
+                $newRunspace = (New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                
                 $runspaces.Add($newRunspace)
 
-                $newRunspace = (New-RunSpace -Client $clientControl -ScriptBlock $global:InputControlScriptBlock)                
+                $param = New-Object -TypeName PSCustomObject -Property @{                      
+                    Client = $clientControl                
+                }
+
+                $newRunspace = (New-RunSpace -ScriptBlock $global:InputControlScriptBlock -Param $param)                  
                 $runspaces.Add($newRunspace)  
 
                 while ($true)
