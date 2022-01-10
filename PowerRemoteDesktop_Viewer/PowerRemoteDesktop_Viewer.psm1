@@ -161,24 +161,24 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         .SYNOPSIS
             Threaded code block to receive updates of remote desktop and update Virtual Desktop Form.
 
-            This code is expected to be run inside a new PowerShell Runspace.
-
-        .PARAMETER syncHash.RequireResize
-            Tell if desktop image needs to be resized to fit viewer screen constrainsts.
+            This code is expected to be run inside a new PowerShell Runspace.        
 
         .PARAMETER syncHash.Client
             A ClientIO Class instance for handling desktop updates.
 
-        .PARAMETER syncHash.VirtualDesktopWidth
+        .PARAMETER syncHash.Param.RequireResize
+            Tell if desktop image needs to be resized to fit viewer screen constrainsts.
+
+        .PARAMETER syncHash.Param.VirtualDesktopWidth
             The integer value representing remote screen width.
 
-        .PARAMETER syncHash.VirtualDesktopHeight
+        .PARAMETER syncHash.Param.VirtualDesktopHeight
             The integer value representing remote screen height.
 
-        .PARAMETER syncHash.VirtualDesktopForm
+        .PARAMETER syncHash.Param.VirtualDesktopForm
             Virtual Desktop Object containing both Form and PaintBox.       
 
-        .PARAMETER syncHash.TransportMode
+        .PARAMETER syncHash.Param.TransportMode
             Define desktop image transport mode: Raw or Base64. This value is defined by server following
             its options.
     #>
@@ -246,7 +246,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
     }
 
     try
-    {      
+    {       
         $packetSize = 4096
 
         while ($true)
@@ -254,10 +254,10 @@ $global:VirtualDesktopUpdaterScriptBlock = {
             $stream = New-Object System.IO.MemoryStream
             try
             {      
-                switch ([TransportMode] $syncHash.TransportMode)         
+                switch ([TransportMode] $syncHash.Param.TransportMode)         
                 {
                     "Raw"
-                    {
+                    {                         
                         $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
 
                         $syncHash.Client.SSLStream.Read($buffer, 0, $buffer.Length)
@@ -303,22 +303,22 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                 $stream.Position = 0                                                                
 
-                if ($syncHash.RequireResize)
+                if ($syncHash.Param.RequireResize)
                 {
                    #$image = [System.Drawing.Image]::FromStream($stream)
 
                    $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
 
-                   $syncHash.VirtualDesktopForm.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $syncHash.VirtualDesktopWidth -NewHeight $syncHash.VirtualDesktopHeight                   
+                   $syncHash.Param.VirtualDesktopForm.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $syncHash.Param.VirtualDesktopWidth -NewHeight $syncHash.Param.VirtualDesktopHeight                   
                 }
                 else
                 {                    
-                    $syncHash.VirtualDesktopForm.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
+                    $syncHash.Param.VirtualDesktopForm.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
                 }
             }
             catch 
             {
-                $syncHash.host.UI.WriteLine($_)
+                $syncHash.Param.host.UI.WriteLine($_)
                 break
             }            
             finally
@@ -330,7 +330,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
     }
     finally
     {
-        $syncHash.VirtualDesktopForm.Form.Close()
+        $syncHash.Param.VirtualDesktopForm.Form.Close()
     }
 }
 
@@ -587,6 +587,68 @@ function New-VirtualDesktopForm
     }
 }
 
+function New-RunSpace
+{
+    <#
+        .SYNOPSIS
+            Create a new PowerShell Runspace.
+
+        .DESCRIPTION
+            Notice: the $host variable is used for debugging purpose to write on caller PowerShell
+            Terminal.
+
+        .PARAMETER Client
+            A ClientIO object containing an active connection with a remote server.
+
+        .PARAMETER ScriptBlock
+            A PowerShell block of code to be evaluated on the new Runspace.
+
+        .PARAMETER Param
+            Optional extra parameters to be attached to Runspace.
+
+        .EXAMPLE
+            New-RunSpace -Client $newClient -ScriptBlock { Start-Sleep -Seconds 10 }
+    #>
+
+    param(
+        [Parameter(Mandatory=$True)]
+        [ClientIO] $Client,
+
+        [Parameter(Mandatory=$True)]
+        [ScriptBlock] $ScriptBlock,
+
+        [PSCustomObject] $Param = $null
+    )   
+
+    $syncHash = [HashTable]::Synchronized(@{})
+    $syncHash.Client = $Client
+    $syncHash.host = $host # For debugging purpose
+
+    if ($Param)
+    {
+        $syncHash.Param = $Param
+    }
+
+    $runspace = [RunspaceFactory]::CreateRunspace()
+    $runspace.ThreadOptions = "ReuseThread"
+    $runspace.ApartmentState = "STA"
+    $runspace.Open()                   
+
+    $runspace.SessionStateProxy.SetVariable("syncHash", $syncHash) 
+
+    $powershell = [PowerShell]::Create().AddScript($ScriptBlock)
+
+    $powershell.Runspace = $runspace
+
+    $asyncResult = $powershell.BeginInvoke()
+
+    return New-Object PSCustomObject -Property @{
+        Runspace = $runspace
+        PowerShell = $powershell
+        AsyncResult = $asyncResult
+    }
+}
+
 function Invoke-RemoteDesktopViewer
 {
     <#
@@ -739,17 +801,7 @@ function Invoke-RemoteDesktopViewer
             $virtualDesktopForm.Form.Location = [System.Drawing.Point]::new(
                 (($locationResolutionInformation.WorkingArea.Width - $virtualDesktopForm.Form.Width) / 2),
                 (($locationResolutionInformation.WorkingArea.Height - $virtualDesktopForm.Form.Height) / 2)
-            )
-
-            # Prepare our synchronized hashtable   
-            $syncHash = [HashTable]::Synchronized(@{})         
-            $syncHash.VirtualDesktopForm = $virtualDesktopForm
-            $syncHash.Client = $clientDesktop
-            $syncHash.host = $host # Mostly for debugging 
-            $syncHash.VirtualDesktopWidth = $virtualDesktopWidth 
-            $syncHash.VirtualDesktopHeight = $virtualDesktopHeight
-            $syncHash.RequireResize = $requireResize
-            $syncHash.TransportMode = $sessionInformation.TransportMode
+            )            
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
             if (-not $DisableInputControl)                   
@@ -1012,18 +1064,17 @@ function Invoke-RemoteDesktopViewer
                 )  
             }
 
-            Write-Verbose "Create and open new runspace..."
+            Write-Verbose "Create and open new runspace..."            
 
-            $runspace = [RunspaceFactory]::CreateRunspace()
-            $runspace.ThreadOptions = "ReuseThread"
-            $runspace.ApartmentState = "STA"
-            $runspace.Open()                                                       
+            $param = New-Object -TypeName PSCustomObject -Property @{
+                VirtualDesktopForm = $virtualDesktopForm                            
+                VirtualDesktopWidth = $virtualDesktopWidth 
+                VirtualDesktopHeight = $virtualDesktopHeight
+                RequireResize = $requireResize
+                TransportMode = $sessionInformation.TransportMode
+            }
 
-            $runspace.SessionStateProxy.SetVariable("syncHash", $syncHash)
-
-            $powershell = [PowerShell]::Create().AddScript($global:VirtualDesktopUpdaterScriptBlock)
-            $powershell.Runspace = $runspace
-            $asyncResult = $powershell.BeginInvoke()   
+            $newRunspace = (New-RunSpace -Client $clientDesktop -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  
 
             Write-Verbose "Done. Environment successfully created. Showing Virtual Desktop Form."                       
 
@@ -1043,20 +1094,16 @@ function Invoke-RemoteDesktopViewer
                 $clientControl.Close()
             }
 
-            if ($powershell) 
+            if ($newRunspace) 
             {         
-                if ($asyncResult)
-                {
-                    $powershell.EndInvoke($asyncResult) | Out-Null
-                }
-
-                $powershell.Runspace.Dispose()                  
-                $powershell.Dispose()
+                $newRunspace.PowerShell.EndInvoke($newRunspace.AsyncResult) | Out-Null                    
+                $newRunspace.PowerShell.Runspace.Dispose()                                      
+                $newRunspace.PowerShell.Dispose()  
             } 
 
-            if ($syncHash.VirtualDesktopForm.Form)
+            if ($param.VirtualDesktopForm)
             {            
-                $syncHash.VirtualDesktopForm.Form.Dispose()
+                $param.VirtualDesktopForm.Form.Dispose()
             }                                    
         }   
 
