@@ -897,7 +897,7 @@ $global:DesktopStreamScriptBlock = {
     {
         [System.IO.MemoryStream] $oldImageStream = New-Object System.IO.MemoryStream
 
-        $jpegEncoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | where { $_.MimeType -eq 'image/jpeg' };
+        $jpegEncoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' };
 
         $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
         $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, $imageQuality)
