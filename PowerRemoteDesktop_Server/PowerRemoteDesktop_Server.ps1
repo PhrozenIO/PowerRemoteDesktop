@@ -422,7 +422,7 @@ function Get-X509CertificateFromStore
     {
         $certCollection = $store.Certificates
 
-        return [System.Security.Cryptography.X509Certificates.X509Certificate2] $result = $certCollection.Find(
+        return $certCollection.Find(
             [X509FindType]::FindBySubjectName,
              $SubjectName,
              $false
