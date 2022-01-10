@@ -1245,22 +1245,11 @@ function Get-SessionInformation
             Most important part is the target screen information. Without this information, remote viewer
             will not be able to correctly draw / adjust desktop image and simulate mouse events.
 
-            This function is expected to be progressively updated with new required session information.
-
-        .PARAMETER SessionId
-            A String containing a random string tied to current remote desktop session.
-
+            This function is expected to be progressively updated with new required session information.        
     #>
-    param (
-        [Parameter(Mandatory=$True)]
-        [string] $SessionId
-    )
-
     $screenBounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 
-    return New-Object PSCustomObject -Property @{
-        SessionId = $SessionId
-
+    return New-Object PSCustomObject -Property @{    
         MachineName = [Environment]::MachineName
         Username = [Environment]::UserName
         WindowsVersion = [Environment]::OSVersion.VersionString
@@ -1476,9 +1465,10 @@ function Invoke-RemoteDesktopServer
 
                 Write-Verbose "Submit Session Information..."                
 
-                $sessionInformation = (Get-SessionInformation -SessionId $Session.Id)
+                $sessionInformation = Get-SessionInformation
 
                 $sessionInformation | Add-Member -MemberType NoteProperty -Name "TransportMode" -Value $TransportMode
+                $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $Session.Id
 
                 $clientDesktop.Writer.WriteLine(($sessionInformation | ConvertTo-Json -Compress))             
                 
