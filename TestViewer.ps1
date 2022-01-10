@@ -2,4 +2,4 @@ Write-Output "This script is used during development phase. Never run this scrip
 
 Invoke-Expression -Command (Get-Content "PowerRemoteDesktop_Viewer\PowerRemoteDesktop_Viewer.psm1" -Raw)
 
-Invoke-RemoteDesktopViewer -Password "Jade" -TLSv1_3 $true
+Invoke-RemoteDesktopViewer -Password "Jade@123@Pwd" -TLSv1_3 $true

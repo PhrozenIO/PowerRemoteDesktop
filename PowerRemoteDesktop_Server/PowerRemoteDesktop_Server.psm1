@@ -1435,14 +1435,28 @@ function Invoke-RemoteDesktopServer
 
         if (-not $Password)
         {
-            $Password = (-join ((48..57) + (64..90) + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_}))
+            $Password = (
+                # a-Z, 0-9, !@#$%^&*_
+                -join ((48..57) + (64..90) + (35..38) + 33 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
+            )
             
-            Write-Verbose "No password were set, generating a new random and complex password..."
-
             Write-Host -NoNewLine "Random password to connect to server: """
             Write-Host -NoNewLine ${Password} -ForegroundColor green
             Write-Host """."
-        }        
+        }    
+        else 
+        {
+            $complexityRules = "(?=^.{12,}$)(?=.*[!@#$%^&*_]+)(?=.*[a-z])(?=.*[A-Z]).*$"
+
+            if (-not ($Password -match $complexityRules))
+            {
+                throw "Password complexity is too weak. Please choose a password following following rules:`r`n`
+                * Minimum 12 Characters`r`n`
+                * One of following symbols: ""!@#$%^&*_""`r`n`
+                * At least of lower case character`r`n`
+                * At least of upper case character`r`n"
+            }
+        }    
 
         $Certificate = $null
 
