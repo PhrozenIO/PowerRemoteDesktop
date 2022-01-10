@@ -575,7 +575,7 @@ class ClientIO {
         {            
             Write-Verbose "Generate new challenge, this might take up to few seconds..."
 
-            $candidate = (-join ((33..126) | Get-Random -Count 128 | %{[char] $_}))
+            $candidate = (-join ((33..126) | Get-Random -Count 128 | ForEach-Object{[char] $_}))
             $candidate = Get-SHA512FromString -String $candidate
 
             $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
@@ -1233,7 +1233,7 @@ function New-SessionId
             Actually this Session Id is used to avoid possible race condition between first and second client.
     #>
 
-    return (SHA512FromString -String (-join ((33..126) | Get-Random -Count 128 | %{[char] $_})))
+    return (SHA512FromString -String (-join ((33..126) | Get-Random -Count 128 | ForEach-Object{[char] $_})))
 }
 
 function Get-LocalMachineInformation
@@ -1414,7 +1414,7 @@ function Invoke-RemoteDesktopServer
 
         if (-not $Password)
         {
-            $Password = (-join ((48..57) + (64..90) + (97..122) | Get-Random -Count 18 | %{[char] $_}))
+            $Password = (-join ((48..57) + (64..90) + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_}))
             
             Write-Verbose "No password were set, generating a new random and complex password..."
 
