@@ -47,8 +47,7 @@
         Plus, any losses or damages occurred from using these contents or the internet
         generally.
 
-    .Todo        
-        - [EASY] Add option for TLS v1.3.                
+    .Todo                            
         - [EASY] Support Password Protected external Certificates.
         - [EASY] Server Fingerprint Authentication.
         - [EASY] Mutual Authentication for SSL/TLS (Client Certificate).
