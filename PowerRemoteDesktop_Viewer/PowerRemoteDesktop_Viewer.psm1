@@ -62,12 +62,7 @@
                  This will be naturally fixed when I will implement my final version of client Connection Handler system.
 
         - [MEDIUM] Keep-Alive system to implement Read / Write Timeout.
-        - [MEDIUM] Improve Virtual Keyboard.
-        - [MEDIUM] Avoid Base64 for Desktop Steaming (Only if 100% Stable).
-                   It sounds obvious that writing RAW Bytes using Stream.Write is 100% stable but strangely locally
-                   it worked like a charm but while testing remotely, it sometimes acted funny. I will investigate about
-                   this issue and re-implement my other technique. 
-
+        - [MEDIUM] Improve Virtual Keyboard.    
         - [MEDIUM] Server Concurrency.
         - [MEDIUM] Listen for local/remote screen resolution update event.
         - [MEDIUM] Multiple Monitor Support.
