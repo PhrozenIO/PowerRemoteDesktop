@@ -48,8 +48,7 @@
         generally.
 
     .Todo        
-        - [EASY] Add option for TLS v1.3.        
-        - [EASY] Version Synchronization.
+        - [EASY] Add option for TLS v1.3.                
         - [EASY] Support Password Protected external Certificates.
         - [EASY] Server Fingerprint Authentication.
         - [EASY] Mutual Authentication for SSL/TLS (Client Certificate).
