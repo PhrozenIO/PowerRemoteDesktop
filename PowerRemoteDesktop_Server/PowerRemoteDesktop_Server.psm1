@@ -502,8 +502,7 @@ class ClientIO {
             required streams with other useful methods.
 
             Supports SSL/TLS.
-    #>
-
+    #>    
     [System.Net.Sockets.TcpClient] $Client = $null
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null
@@ -511,7 +510,8 @@ class ClientIO {
 
     ClientIO(
         [System.Net.Sockets.TcpClient] $Client,
-        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate
+        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
+        [bool] $TLSv1_3 = $false
     ) {
         <#
             .SYNOPSIS
@@ -522,6 +522,9 @@ class ClientIO {
 
             .PARAMETER Certificate
                 X509 Certificate used for SSL/TLS encryption tunnel.
+
+            .PARAMETER TLSv1_3
+                Define whether or not SSL/TLS v1.3 must be used.
         #>
 
         if ((-not $Client) -or (-not $Certificate))
@@ -533,14 +536,22 @@ class ClientIO {
 
         Write-Verbose "Create new SSL Stream..."
 
-        $this.SSLStream = New-Object System.Net.Security.SslStream($this.Client.GetStream(), $false)        
+        $this.SSLStream = New-Object System.Net.Security.SslStream($this.Client.GetStream(), $false)                
 
-        Write-Verbose "Authenticate as server..."
+        if ($TLSv1_3)
+        {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
+        }
+        else {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS12
+        }
+
+        Write-Verbose "Authenticate as server using ${TLSVersion}..."
 
         $this.SSLStream.AuthenticateAsServer(
             $Certificate,
             $false,
-            [System.Security.Authentication.SslProtocols]::TLS12, # TODO: Also Support 1.3
+            $TLSVersion,
             $false
         )
 
@@ -703,11 +714,12 @@ class ServerIO {
 
     [string] $ListenAddress
     [int] $ListenPort
+    [bool] $TLSv1_3
 
     [System.Net.Sockets.TcpListener] $Server = $null    
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null
-    [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate = $null
+    [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate = $null    
 
     ServerIO(
         <#
@@ -725,14 +737,19 @@ class ServerIO {
 
             .PARAMETER Certificate
                 X509 Certificate used for SSL/TLS encryption tunnel.
+
+            .PARAMETER TLSv1_3
+                Define whether or not SSL/TLS v1.3 must be used.
         #>
 
         [string] $ListenAddress = "0.0.0.0",
         [int] $ListenPort = 2801,
-        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate = $null
+        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate = $null,
+        [bool] $TLSv1_3 = $false
     ) {
         $this.ListenAddress = $ListenAddress
         $this.ListenPort = $ListenPort
+        $this.TLSv1_3 = $TLSv1_3
 
         if (-not $Certificate)
         {
@@ -792,7 +809,8 @@ class ServerIO {
 
         return [ClientIO]::New(            
             $client,
-            $this.Certificate
+            $this.Certificate,
+            $this.TLSv1_3
         )
     }
 
@@ -1374,6 +1392,9 @@ function Invoke-RemoteDesktopServer
         .PARAMETER TransportMode
             Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep
             the Base64 transport method as an alternative.
+
+        .PARAMETER TLSv1_3
+            Define whether or not TLS v1.3 must be used for communication with Viewer.
     #>
 
     param (
@@ -1385,7 +1406,8 @@ function Invoke-RemoteDesktopServer
         # Or
         [string] $EncodedCertificate = "", # 2
 
-        [TransportMode] $TransportMode = "Raw"        
+        [TransportMode] $TransportMode = "Raw",
+        [bool] $TLSv1_3 = $false
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1439,7 +1461,7 @@ function Invoke-RemoteDesktopServer
         }
 
         # Create new server and listen
-        $server = [ServerIO]::New($ListenAddress, $ListenPort, $Certificate)        
+        $server = [ServerIO]::New($ListenAddress, $ListenPort, $Certificate, $TLSv1_3)        
         $server.Listen()        
 
         while ($true)
@@ -1469,7 +1491,7 @@ function Invoke-RemoteDesktopServer
 
                 $sessionInformation | Add-Member -MemberType NoteProperty -Name "TransportMode" -Value $TransportMode
                 $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $Session.Id
-                $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion
+                $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion                
 
                 $clientDesktop.Writer.WriteLine(($sessionInformation | ConvertTo-Json -Compress))             
                 
@@ -1486,7 +1508,7 @@ function Invoke-RemoteDesktopServer
                 }                
 
                 $param = New-Object -TypeName PSCustomObject -Property @{
-                    TransportMode = $TransportMode
+                    TransportMode = $TransportMode                    
                 }
 
                 $newRunspace = (New-RunSpace -Client $clientDesktop -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                

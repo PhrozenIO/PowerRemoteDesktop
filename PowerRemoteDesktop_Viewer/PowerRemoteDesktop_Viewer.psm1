@@ -346,6 +346,7 @@ class ClientIO {
 
     [string] $RemoteAddress
     [int] $RemotePort
+    [bool] $TLSv1_3
 
     [System.Net.Sockets.TcpClient] $Client = $null
     [System.Net.Security.SslStream] $SSLStream = $null
@@ -363,12 +364,16 @@ class ClientIO {
             .PARAMETER RemotePort
                 Remote server port.
 
+            .PARAMETER TLSv1_3
+                Define whether or not SSL/TLS v1.3 must be used.
         #>
         [string] $RemoteAddress = "127.0.0.1",
-        [int] $RemotePort = 2801
+        [int] $RemotePort = 2801,
+        [bool] $TLSv1_3 = $false
     ) {
         $this.RemoteAddress = $RemoteAddress
         $this.RemotePort = $RemotePort
+        $this.TLSv1_3 = $TLSv1_3
     }
 
     [void]Connect() {
@@ -398,12 +403,20 @@ class ClientIO {
             }
         )
 
-        Write-Verbose "Authenticate as client..."
+        if ($this.TLSv1_3)
+        {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
+        }
+        else {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS12
+        }
+
+        Write-Verbose "Authenticate as client using ${TLSVersion}..."
 
         $this.SSLStream.AuthenticateAsClient(
             "PowerRemoteDesktop",
             $null,
-            [System.Security.Authentication.SslProtocols]::TLS12, # TODO: Support TLS1.3 Option
+            $TLSVersion,
             $null
         )
 
@@ -595,6 +608,10 @@ function Invoke-RemoteDesktopViewer
         .PARAMETER Password
             Password used during server authentication.
 
+        .PARAMETER TLSv1_3
+            Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
+            Recommended if possible.
+
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
             Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort "2801" -Password "Just4TestingLocally!"
@@ -604,6 +621,7 @@ function Invoke-RemoteDesktopViewer
         [string] $ServerAddress = "127.0.0.1",
         [int] $ServerPort = 2801,
         [bool] $DisableInputControl = $false,
+        [bool] $TLSv1_3 = $false,
 
         [Parameter(Mandatory=$true)]
         [string] $Password
@@ -622,7 +640,7 @@ function Invoke-RemoteDesktopViewer
         Write-Verbose "Connect to server for Desktop Streaming..."
 
         # Create Client Socket for Desktop Capture
-        $clientDesktop = [ClientIO]::New($ServerAddress, $ServerPort)
+        $clientDesktop = [ClientIO]::New($ServerAddress, $ServerPort, $TLSv1_3)
         $clientDesktop.Connect()
 
         if (-not $clientDesktop.Authentify($Password))
@@ -661,7 +679,7 @@ function Invoke-RemoteDesktopViewer
         Write-Verbose "Connect to server for Input Control..."
 
         # Create Client Socket for Desktop Control (Mouse / Keyboard)
-        $clientControl = [ClientIO]::new($ServerAddress, $ServerPort) 
+        $clientControl = [ClientIO]::new($ServerAddress, $ServerPort, $TLSv1_3) 
         $clientControl.Connect()
 
         if (-not $clientControl.Hello($sessionInformation.SessionId))
