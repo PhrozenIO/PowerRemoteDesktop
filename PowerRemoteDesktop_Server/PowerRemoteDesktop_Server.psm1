@@ -1235,7 +1235,7 @@ function New-SessionId
     return (SHA512FromString -String (-join ((33..126) | Get-Random -Count 128 | %{[char] $_})))
 }
 
-function Get-SessionInformation
+function Get-LocalMachineInformation
 {
     <#
         .SYNOPSIS
@@ -1465,7 +1465,7 @@ function Invoke-RemoteDesktopServer
 
                 Write-Verbose "Submit Session Information..."                
 
-                $sessionInformation = Get-SessionInformation
+                $sessionInformation = Get-LocalMachineInformation
 
                 $sessionInformation | Add-Member -MemberType NoteProperty -Name "TransportMode" -Value $TransportMode
                 $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $Session.Id
