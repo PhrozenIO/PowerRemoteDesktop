@@ -78,7 +78,7 @@
 
 Add-Type -Assembly System.Windows.Forms
 
-$global:PowerRemoteDesktopVersion = "1.0b"
+$global:PowerRemoteDesktopVersion = "1.0.beta.2"
 
 function Write-Banner 
 {
@@ -184,7 +184,16 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
         .PARAMETER syncHash.VirtualDesktopForm
             Virtual Desktop Object containing both Form and PaintBox.       
+
+        .PARAMETER syncHash.TransportMode
+            Define desktop image transport mode: Raw or Base64. This value is defined by server following
+            its options.
     #>
+
+    enum TransportMode {
+        Raw = 1
+        Base64 = 2
+    }
 
     function Invoke-SmoothResize
     {
@@ -245,14 +254,61 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
     try
     {      
+        $packetSize = 4096
+
         while ($true)
-        {            
+        {                   
             $stream = New-Object System.IO.MemoryStream
             try
-            {                
-                [byte[]] $buffer = [System.Convert]::FromBase64String(($syncHash.Client.Reader.ReadLine()))
+            {      
+                switch ([TransportMode] $syncHash.TransportMode)         
+                {
+                    "Raw"
+                    {
+                        $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
 
-                $stream.Write($buffer, 0, $buffer.Length)                
+                        $syncHash.Client.SSLStream.Read($buffer, 0, $buffer.Length)
+
+                        [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
+
+                        $stream.SetLength($totalBufferSize)
+
+                        $stream.position = 0
+
+                        $totalBytesRead = 0
+
+                        $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
+                        do
+                        {
+                            $bufferSize = $totalBufferSize - $totalBytesRead
+                            if ($bufferSize -gt $packetSize)
+                            {
+                                $bufferSize = $packetSize
+                            }    
+                            else
+                            {
+                                # Save some memory operations for creating objects.
+                                # Usually, bellow code is call when last chunk is being sent.
+                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
+                            }                
+
+                            $syncHash.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
+
+                            $stream.Write($buffer, 0, $buffer.Length) | Out-Null
+
+                            $totalBytesRead += $bufferSize
+                        } until ($totalBytesRead -eq $totalBufferSize)
+                    }
+
+                    "Base64"
+                    {
+                        [byte[]] $buffer = [System.Convert]::FromBase64String(($syncHash.Client.Reader.ReadLine()))
+
+                        $stream.Write($buffer, 0, $buffer.Length)   
+                    }
+                }                    
+
+                $stream.Position = 0                                                                
 
                 if ($syncHash.RequireResize)
                 {
@@ -267,6 +323,11 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                     $syncHash.VirtualDesktopForm.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
                 }
             }
+            catch 
+            {
+                $syncHash.host.UI.WriteLine($_)
+                break
+            }            
             finally
             {
                 $stream.Close()
@@ -589,7 +650,8 @@ function Invoke-RemoteDesktopViewer
             (-not ($sessionInformation.PSobject.Properties.name -match "ScreenHeight")) -or
             (-not ($sessionInformation.PSobject.Properties.name -match "ScreenX")) -or
             (-not ($sessionInformation.PSobject.Properties.name -match "ScreenY")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "SessionId"))
+            (-not ($sessionInformation.PSobject.Properties.name -match "SessionId")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "TransportMode"))
         )
         {
             throw "Invalid System Information Object. Abort connection..."
@@ -669,6 +731,7 @@ function Invoke-RemoteDesktopViewer
             $syncHash.VirtualDesktopWidth = $virtualDesktopWidth 
             $syncHash.VirtualDesktopHeight = $virtualDesktopHeight
             $syncHash.RequireResize = $requireResize
+            $syncHash.TransportMode = $sessionInformation.TransportMode
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
             if (-not $DisableInputControl)                   
