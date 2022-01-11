@@ -826,7 +826,7 @@ function Invoke-RemoteDesktopViewer
             Remote Server Port.
 
         .PARAMETER DisableInputControl
-            If set to $true, this option disables control events on form (Mouse Clicks, Moves and Keyboard)
+            If set, this option disables control events on form (Mouse Clicks, Moves and Keyboard)
             This option is generally set to true during development when connecting to local machine to avoid funny
             things.
 
@@ -848,7 +848,7 @@ function Invoke-RemoteDesktopViewer
     param (        
         [string] $ServerAddress = "127.0.0.1",
         [int] $ServerPort = 2801,
-        [bool] $DisableInputControl = $false,
+        [switch] $DisableInputControl,
         [switch] $TLSv1_3,
             
         [Parameter(Mandatory=$true)]
