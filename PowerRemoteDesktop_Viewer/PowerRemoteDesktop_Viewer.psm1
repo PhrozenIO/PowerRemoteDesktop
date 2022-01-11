@@ -848,7 +848,7 @@ function Invoke-RemoteDesktopViewer
         [string] $ServerAddress = "127.0.0.1",
         [int] $ServerPort = 2801,
         [bool] $DisableInputControl = $false,
-        [bool] $TLSv1_3 = $false,
+        [switch] $TLSv1_3,
             
         [Parameter(Mandatory=$true)]
         [string] $Password,

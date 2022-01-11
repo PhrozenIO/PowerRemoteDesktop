@@ -1543,7 +1543,7 @@ function Invoke-RemoteDesktopServer
         [string] $EncodedCertificate = "", # 2
 
         [TransportMode] $TransportMode = "Raw",
-        [bool] $TLSv1_3 = $false,
+        [switch] $TLSv1_3,
         
         [switch] $DisableVerbosity
     )
