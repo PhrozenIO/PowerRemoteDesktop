@@ -12,53 +12,49 @@ It does not rely in any existing remote desktop application / protocol to functi
 
 Even the Viewer part (Including the GUI) is coded in PowerShell with the help of WinForms API.
 
-⚠️ This project is actually in its very beginning. Do not use it under a production environment until version is marked as final / stable version.
-
 Tested on:
 
 * Windows 10 - PowerShell Version: 5.1.19041.1320
 * Windows 11 - PowerShell Version: 5.1.22000.282
+
+## Changelog
+
+### 11 January 2021
+
+* Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances. Base64 Transport Method is still available through an option but disabled by default.
+* Protocol has drastically changed. It is smoother to read and less prone to errors.
+* TLS v1.3 option added (Might not be supported by some systems).
+* Several code optimization, refactoring and fixes.
+* Password complexity check implemented to avoid lazy passwords.
+* Possibility to disable verbose.
+* Server & Viewer version synchronization. Same version must be used between the two.
 
 ## Features
 
 * Captures Remote Desktop Image with support of HDPI.
 * Supports Mouse Click (Left, Right, Middle), Mouse Moves and Mouse Wheel.
 * Supports Keystrokes Simulation (Sending remote key strokes) and few useful shortcuts.
-* Traffic is encrypted using TLSv1.2. Soon to support an additional option of TLSv1.3 (Optionnaly).
+* Traffic is encrypted by default using TLSv1.2 and optionnally using TLSv1.3 (TLS 1.3 might not be possible on older systems).
 * Challenge-Based Password Authentication to protect access to server.
 * Support custom SSL/TLS Certificate (File or Encoded in base64). If not specified, a default one is generated and installed on local machine (requires Administrator privileges)
 
-## What is really beta
+## What is still beta
 
-Server client acquirement system is temporary, it works perectly fine (if nothing interfer with normal handshake). I will implement in final version the real client handler system in a separated thread to avoid possible and very rare dead locks.
+I consider this version as stable but I want to do more tests and have more feedback.
 
-I will also implement a Read / Write Timeout system followed by a Keep-Alive system to detect ghost connections and avoid again rare dead locks.
-
-I will also improve comments and logging (verbose / normal text) and try to support cursor state monitor (to display the remote cursor state on viewer).
+I also want to implement few additional features before releasing the version 1.
 
 ## Extended TODO List
 
 ```
-* [EASY] Add option for TLS v1.3.        
-* [EASY] Version Synchronization.
+* [EASY] Do a deep investigation about SecureString and if it applies to current project (to protect password)                    
 * [EASY] Support Password Protected external Certificates.
 * [EASY] Server Fingerprint Authentication.
-* [EASY] Mutual Authentication for SSL/TLS (Client Certificate).
-* [EASY] Improve Error Control Flow.        
-* [EASY] Synchronize Cursor State.
-* [EASY] Improve Comments.
-* [EASY] Better detail on Verbose with possibility to disable verbose.
+* [EASY] Mutual Authentication for SSL/TLS (Client Certificate).        
+* [EASY] Synchronize Cursor State.                
 * [EASY] Synchronize Clipboard. 
-* [EASY] Handle new client acceptation on a separated Runspace to avoid locks which could cause DoS of the Service.
-         This will be naturally fixed when I will implement my final version of client Connection Handler system.
-
 * [MEDIUM] Keep-Alive system to implement Read / Write Timeout.
-* [MEDIUM] Improve Virtual Keyboard.
-* [MEDIUM] Avoid Base64 for Desktop Steaming (Only if 100% Stable).
-           It sounds obvious that writing RAW Bytes using Stream.Write is 100% stable but strangely locally
-           it worked like a charm but while testing remotely, it sometimes acted funny. I will investigate about
-           this issue and re-implement my other technique. 
-
+* [MEDIUM] Improve Virtual Keyboard.    
 * [MEDIUM] Server Concurrency.
 * [MEDIUM] Listen for local/remote screen resolution update event.
 * [MEDIUM] Multiple Monitor Support.
@@ -88,7 +84,7 @@ The module should be imported with available functions:
 You can import both scripts alternatively by:
 
 * Pasting the whole code to a new PowerShell window
-* `. .\PowerRemoteDesktop_[Viewer/Server].psm1`
+* `IEX (Get-Content .\PowerRemoteDesktop_[Viewer/Server].psm1 -Raw)`
 * Importing a Base64 encoded version of the code through IEX/Invoke-Expression
 * Remote Location through DownloadString(...) then IEX/Invoke-Expression
 * Your imagination
@@ -107,6 +103,8 @@ Supported options:
 * `ServerPort`: Remote Server Port.
 * `DisableInputControl`: If set to $true, this option disable control events on form (Mouse Clicks, Moves and Keyboard). This option is generally to true during development when connecting to local machine to avoid funny things.
 * `Password`: Password used during server authentication.
+* `DisableVerbosity`: Disable verbosity (not recommended)
+* `TLSv1_3`: Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
 
 #### Example
 
@@ -123,9 +121,11 @@ Supported options:
 * `ListenAddress`: Define in which interface to listen for new viewer.
 * `ListenPort`: Define in which port to listen for new viewer.
 * `Password`: Define password used during authentication process.
-
 * `CertificateFile`: A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
 * `EncodedCertificate`: A valid X509 Certificate (With Private Key) encoded as a Base64 String.
+* `TransportMode`: (Raw or Base64) Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep the Base64 transport method as an alternative.
+* `TLSv1_3`: Define whether or not TLS v1.3 must be used for communication with Viewer.
+* `DisableVerbosity`: Disable verbosity (not recommended)
 
 If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
 

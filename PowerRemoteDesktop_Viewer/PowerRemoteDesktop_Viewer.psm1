@@ -1,7 +1,7 @@
 <#-------------------------------------------------------------------------------
 
     Power Remote Desktop
-    Version 1.0b
+    Version 1.0 beta 2
     REL: January 2022.
 
     In loving memory of my father. 
@@ -47,27 +47,15 @@
         Plus, any losses or damages occurred from using these contents or the internet
         generally.
 
-    .Todo        
-        - [EASY] Add option for TLS v1.3.        
-        - [EASY] Version Synchronization.
+    .Todo                    
+        - [EASY] Do a deep investigation about SecureString and if it applies to current project (to protect password)
         - [EASY] Support Password Protected external Certificates.
         - [EASY] Server Fingerprint Authentication.
-        - [EASY] Mutual Authentication for SSL/TLS (Client Certificate).
-        - [EASY] Improve Error Control Flow.        
-        - [EASY] Synchronize Cursor State.
-        - [EASY] Improve Comments.
-        - [EASY] Better detail on Verbose with possibility to disable verbose.
+        - [EASY] Mutual Authentication for SSL/TLS (Client Certificate).        
+        - [EASY] Synchronize Cursor State.                
         - [EASY] Synchronize Clipboard. 
-        - [EASY] Handle new client acceptation on a separated Runspace to avoid locks which could cause DoS of the Service.
-                 This will be naturally fixed when I will implement my final version of client Connection Handler system.
-
         - [MEDIUM] Keep-Alive system to implement Read / Write Timeout.
-        - [MEDIUM] Improve Virtual Keyboard.
-        - [MEDIUM] Avoid Base64 for Desktop Steaming (Only if 100% Stable).
-                   It sounds obvious that writing RAW Bytes using Stream.Write is 100% stable but strangely locally
-                   it worked like a charm but while testing remotely, it sometimes acted funny. I will investigate about
-                   this issue and re-implement my other technique. 
-
+        - [MEDIUM] Improve Virtual Keyboard.    
         - [MEDIUM] Server Concurrency.
         - [MEDIUM] Listen for local/remote screen resolution update event.
         - [MEDIUM] Multiple Monitor Support.
@@ -78,7 +66,7 @@
 
 Add-Type -Assembly System.Windows.Forms
 
-$global:PowerRemoteDesktopVersion = "1.0b"
+$global:PowerRemoteDesktopVersion = "1.0.beta.2"
 
 function Write-Banner 
 {
@@ -168,23 +156,32 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         .SYNOPSIS
             Threaded code block to receive updates of remote desktop and update Virtual Desktop Form.
 
-            This code is expected to be run inside a new PowerShell Runspace.
-
-        .PARAMETER syncHash.RequireResize
-            Tell if desktop image needs to be resized to fit viewer screen constrainsts.
+            This code is expected to be run inside a new PowerShell Runspace.        
 
         .PARAMETER syncHash.Client
             A ClientIO Class instance for handling desktop updates.
 
-        .PARAMETER syncHash.VirtualDesktopWidth
+        .PARAMETER syncHash.Param.RequireResize
+            Tell if desktop image needs to be resized to fit viewer screen constrainsts.
+
+        .PARAMETER syncHash.Param.VirtualDesktopWidth
             The integer value representing remote screen width.
 
-        .PARAMETER syncHash.VirtualDesktopHeight
+        .PARAMETER syncHash.Param.VirtualDesktopHeight
             The integer value representing remote screen height.
 
-        .PARAMETER syncHash.VirtualDesktopForm
+        .PARAMETER syncHash.Param.VirtualDesktopForm
             Virtual Desktop Object containing both Form and PaintBox.       
+
+        .PARAMETER syncHash.Param.TransportMode
+            Define desktop image transport mode: Raw or Base64. This value is defined by server following
+            its options.
     #>
+
+    enum TransportMode {
+        Raw = 1
+        Base64 = 2
+    }
 
     function Invoke-SmoothResize
     {
@@ -244,29 +241,81 @@ $global:VirtualDesktopUpdaterScriptBlock = {
     }
 
     try
-    {      
+    {       
+        $packetSize = 4096
+
         while ($true)
-        {            
+        {                   
             $stream = New-Object System.IO.MemoryStream
             try
-            {                
-                [byte[]] $buffer = [System.Convert]::FromBase64String(($syncHash.Client.Reader.ReadLine()))
+            {      
+                switch ([TransportMode] $syncHash.Param.TransportMode)         
+                {
+                    "Raw"
+                    {                         
+                        $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
 
-                $stream.Write($buffer, 0, $buffer.Length)                
+                        $syncHash.Client.SSLStream.Read($buffer, 0, $buffer.Length)
 
-                if ($syncHash.RequireResize)
+                        [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
+
+                        $stream.SetLength($totalBufferSize)
+
+                        $stream.position = 0
+
+                        $totalBytesRead = 0
+
+                        $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
+                        do
+                        {
+                            $bufferSize = $totalBufferSize - $totalBytesRead
+                            if ($bufferSize -gt $packetSize)
+                            {
+                                $bufferSize = $packetSize
+                            }    
+                            else
+                            {
+                                # Save some memory operations for creating objects.
+                                # Usually, bellow code is call when last chunk is being sent.
+                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
+                            }                
+
+                            $syncHash.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
+
+                            $stream.Write($buffer, 0, $buffer.Length) | Out-Null
+
+                            $totalBytesRead += $bufferSize
+                        } until ($totalBytesRead -eq $totalBufferSize)
+                    }
+
+                    "Base64"
+                    {
+                        [byte[]] $buffer = [System.Convert]::FromBase64String(($syncHash.Client.Reader.ReadLine()))
+
+                        $stream.Write($buffer, 0, $buffer.Length)   
+                    }
+                }                    
+
+                $stream.Position = 0                                                                
+
+                if ($syncHash.Param.RequireResize)
                 {
                    #$image = [System.Drawing.Image]::FromStream($stream)
 
                    $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
 
-                   $syncHash.VirtualDesktopForm.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $syncHash.VirtualDesktopWidth -NewHeight $syncHash.VirtualDesktopHeight                   
+                   $syncHash.Param.VirtualDesktopForm.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $syncHash.Param.VirtualDesktopWidth -NewHeight $syncHash.Param.VirtualDesktopHeight                   
                 }
                 else
                 {                    
-                    $syncHash.VirtualDesktopForm.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
+                    $syncHash.Param.VirtualDesktopForm.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
                 }
             }
+            catch 
+            {
+                $syncHash.Param.host.UI.WriteLine($_)
+                break
+            }            
             finally
             {
                 $stream.Close()
@@ -276,7 +325,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
     }
     finally
     {
-        $syncHash.VirtualDesktopForm.Form.Close()
+        $syncHash.Param.VirtualDesktopForm.Form.Close()
     }
 }
 
@@ -291,6 +340,7 @@ class ClientIO {
 
     [string] $RemoteAddress
     [int] $RemotePort
+    [bool] $TLSv1_3
 
     [System.Net.Sockets.TcpClient] $Client = $null
     [System.Net.Security.SslStream] $SSLStream = $null
@@ -308,12 +358,16 @@ class ClientIO {
             .PARAMETER RemotePort
                 Remote server port.
 
+            .PARAMETER TLSv1_3
+                Define whether or not SSL/TLS v1.3 must be used.
         #>
         [string] $RemoteAddress = "127.0.0.1",
-        [int] $RemotePort = 2801
+        [int] $RemotePort = 2801,
+        [bool] $TLSv1_3 = $false
     ) {
         $this.RemoteAddress = $RemoteAddress
         $this.RemotePort = $RemotePort
+        $this.TLSv1_3 = $TLSv1_3
     }
 
     [void]Connect() {
@@ -322,50 +376,59 @@ class ClientIO {
                 Open a new connection to remote server.
                 Create required streams and open a new secure connection with peer.
         #>
-        Write-Verbose "Connect to server ""$($this.RemoteAddress):$($this.RemotePort)..."""
+        Write-Verbose "Connect: ""$($this.RemoteAddress):$($this.RemotePort)..."""
 
         $this.Client = New-Object System.Net.Sockets.TcpClient($this.RemoteAddress, $this.RemotePort)
 
-        Write-Verbose "Connected.  Create new SSL Stream..."
+        Write-Verbose "Connected."
+
+        if ($this.TLSv1_3)
+        {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
+        }
+        else {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS12
+        }  
+
+        Write-Verbose "Establish an encrypted tunnel using: ${TLSVersion}..."
 
         $this.SSLStream = New-object System.Net.Security.SslStream(
             $this.Client.GetStream(),
             $false,
             {
                     param(
-                        $Sender,
+                        $Sendr,
                         $Certificate,
                         $Chain,
                         $Policy
                 ) 
 
-                return $true # Always return valid (TODO: Certificate / Fingerprint Validation)
+                # TODO: Certificate Validation
+                return $true
             }
-        )
-
-        Write-Verbose "Authenticate as client..."
+        )              
 
         $this.SSLStream.AuthenticateAsClient(
             "PowerRemoteDesktop",
             $null,
-            [System.Security.Authentication.SslProtocols]::TLS12, # TODO: Support TLS1.3 Option
+            $TLSVersion,
             $null
         )
 
         if (-not $this.SSLStream.IsEncrypted)
         {
-            throw "Could not established an encrypted tunnel with server."
+            throw "Could not establish a secure communication channel with remote server."
         }
-
-        Write-Verbose "Open communication channels..."
 
         $this.Writer = New-Object System.IO.StreamWriter($this.SSLStream)
         $this.Writer.AutoFlush = $true
 
-        $this.Reader = New-Object System.IO.StreamReader($this.SSLStream)        
+        $this.Reader = New-Object System.IO.StreamReader($this.SSLStream) 
+
+        Write-Verbose "Encrypted tunnel opened and ready for use."               
     }
 
-    [bool]Authentify([string] $Password) {
+    [void]Authentify([string] $Password) {
         <#
             .SYNOPSIS
                 Handle authentication process with remote server.
@@ -376,76 +439,107 @@ class ClientIO {
             .EXAMPLE
                 .Authentify("s3cr3t!")
         #>
-        if (-not $Password) { return $false }
-        try
+
+        Write-Verbose "Authentify with remote server (Challenged-Based Authentication)..."
+
+        $candidate = $this.Reader.ReadLine()                        
+
+        $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
+
+        Write-Verbose "@Challenge:"
+        Write-Verbose "Candidate: ""${candidate}"""
+        Write-Verbose "Solution: ""${challengeSolution}"""
+        Write-Verbose "---"            
+
+        $this.Writer.WriteLine($challengeSolution)
+
+        $result = $this.Reader.ReadLine()
+        if ($result -eq "OK.")
         {
-            Write-Verbose "Authentify to remote server..."
-
-            $candidate = $this.Reader.ReadLine()            
-
-            Write-Verbose "Challenge candidate received: ""${candidate}"". Resolving challenge..."
-
-            $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
-
-            Write-Verbose "Offered solution: ""${challengeSolution}"". Sending to server..."
-
-            $this.Writer.WriteLine($challengeSolution)
-
-            $result = $this.Reader.ReadLine()
-            if ($result -eq "OK.")
-            {
-                Write-Verbose "Authentication success."
-
-                return $true
-            }            
-            else 
-            {
-                Write-Verbose "Authentication failed."
-
-                return $false
-            }
-        }
-        catch 
+            Write-Verbose "Solution accepted. Authentication success."                
+        }            
+        else 
         {
-            return $false
+            throw "Solution declined. Authentication failed."                
         }
+    
     }
 
-    [bool]Hello([string] $SessionId) {
+    [void]Hello([string] $SessionId) {
         <#
             .SYNOPSIS
-                This method must be called before password authentication if current connection requires
-                session pre-authentication.
+                This method must be called after Password-Authentication to finalise an established
+                connection with server.                
 
             .PARAMETER SessionId
                 A String containing the Session Id.
         #>
 
-        Write-Verbose "Starting Session Pre-Auth."
-
-        Write-Verbose "Sending Session Token: ${SessionId}"
+        Write-Verbose "Say Hello..."
 
         $this.Writer.WriteLine($SessionId)
 
         $result = $this.Reader.ReadLine()
         if ($result -eq "HELLO.")
         {
-            Write-Verbose "Session Pre-Auth Success."
-
-            return $true
+            Write-Verbose "Server Hello back."
         }            
         else 
         {
-            Write-Verbose "Session Pre-Auth Failed."
-
-            return $false
+            throw "Could not finalise connection with remote server. Session Id is wrong or was terminated."
         }
+    }
+    
+    [PSCustomObject]Hello(){
+        <#
+            .SYNOPSIS
+                This method must be called after Password-Authentication to finalise an established
+                connection with server.
+
+            .DESCRIPTION
+                This method is called when no session is already present. Server will send several informations 
+                including a new session id the store.
+
+                TODO: Instead of PSCustomObject, create a specific class ?
+        #>
+        
+        Write-Verbose "Say Hello..."
+
+        $jsonObject = $this.Reader.ReadLine()
+
+        Write-Verbose "@SessionInformation:"
+        Write-Verbose $jsonObject
+        Write-Verbose "---"
+
+        $sessionInformation = $jsonObject | ConvertFrom-Json
+        if (
+            (-not ($sessionInformation.PSobject.Properties.name -match "MachineName")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "Username")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "WindowsVersion")) -or                      
+            (-not ($sessionInformation.PSobject.Properties.name -match "SessionId")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "TransportMode")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "Version")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenInformation"))
+        )
+        {
+            throw "Invalid session information data."
+        }   
+        
+        if ($sessionInformation.Version -ne $global:PowerRemoteDesktopVersion)
+        {
+            throw "Server and Viewer version mismatch.`r`n`
+            Local: ""${global:PowerRemoteDesktopVersion}""`r`n`
+            Remote: ""$($sessionInformation.Version)""`r`n`
+            You cannot use two different version between Viewer and Server."
+        }
+
+        return $sessionInformation
     }
 
     [void]Close() {
         <#
             .SYNOPSIS
-                Release streams and client.
+                Release Streams and Connections.
         #>
         if ($this.Writer)
         {
@@ -467,6 +561,143 @@ class ClientIO {
             $this.Client.Close()
         }
     }
+}
+
+class ViewerSession
+{
+    <#
+        .SYNOPSIS
+            Viewer Session Class
+
+        .DESCRIPTION
+            Contains methods to handle from A to Z the Power Remote Desktop Protocol.
+    #>
+
+    [PSCustomObject] $SessionInformation = $null
+    [string] $ServerAddress = "127.0.0.1"
+    [string] $ServerPort = 2801
+    [string] $Password = ""
+    [bool] $TLSv1_3 = $false        
+
+    [ClientIO] $ClientDesktop = $null
+    [ClientIO] $ClientControl = $null
+
+    ViewerSession(        
+        [string] $ServerAddress,
+        [int] $ServerPort,
+        [string] $Password,
+        [bool] $TLSv1_3
+    )    
+    {
+        <#
+            .SYNOPSIS
+                Create a new viewer session object.
+
+            .DESCRIPTION
+                This object will contain session information including active connection
+                objects (ClientIO)
+
+            .PARAMETER ServerAddress
+            Remote Server Address.
+
+            .PARAMETER ServerPort
+                Remote Server Port.
+
+            .PARAMETER Password
+                Password used during server authentication.
+
+            .PARAMETER TLSv1_3
+                Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
+                Recommended if possible.
+        #>
+
+        # TODO: Check if ServerAddress is a valid host.
+        
+        # Or: System.Management.Automation.Runspaces.MaxPort (High(Word))
+        if ($ServerPort -lt 0 -and $ServerPort -gt 65535)
+        {
+            throw "Invalid TCP Port (0-65535)"
+        }
+
+        $this.ServerAddress = $ServerAddress
+        $this.ServerPort = $ServerPort 
+        $this.Password = $Password
+        $this.TLSv1_3 = $TLSv1_3           
+    }
+
+    [void] OpenSession() {
+        <#
+            .SYNOPSIS
+                Establish a new complete session with remote server.
+
+            .DESCRIPTION
+                This method handle both session handshake and Password-Authentication.
+        #>        
+        Write-Verbose "Open new session with remote server: ""$($this.ServerAddress):$($this.ServerPort)""..."
+
+        if ($this.SessionInformation)
+        {
+            throw "An session already exists. Close existing session first."
+        }
+
+        Write-Verbose "Establish first contact with remote server..."
+
+        $this.ClientDesktop = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.TLSv1_3)
+        try
+        {
+            $this.ClientDesktop.Connect()        
+
+            $this.ClientDesktop.Authentify($this.Password)
+
+            $this.SessionInformation = $this.ClientDesktop.Hello()
+
+            Write-Verbose "Open secondary tunnel for input control..."
+
+            $this.ClientControl = [ClientIO]::new($this.ServerAddress, $this.ServerPort, $this.TLSv1_3) 
+            $this.ClientControl.Connect()    
+            
+            $this.ClientControl.Authentify($this.Password)
+
+            $this.ClientControl.Hello($this.SessionInformation.SessionId)
+
+            Write-Verbose "New session successfully established with remote server."
+            Write-Verbose "Session Id: $($this.SessionInformation.SessionId)"
+        }
+        catch
+        {            
+            $this.CloseSession()
+
+            throw "Open Session Error. Detail: ""$($_)"""
+        }        
+    }
+
+    [void] CloseSession() {
+        <#
+            .SYNOPSIS
+                Close an existing session with remote server.
+                Terminate active connections and reset session informations.
+        #>
+
+        Write-Verbose "Close existing session..."
+
+        if ($this.ClientDesktop)
+        {
+            $this.ClientDesktop.Close()
+        }
+
+        if ($this.ClientControl)
+        {
+            $this.ClientControl.Close()
+        }        
+
+        $this.ClientDesktop = $null
+        $this.ClientControl = $null
+        
+        $this.SessionInformation = $null
+        
+        Write-Verbose "Session closed."
+    }
+
 }
 
 function New-VirtualDesktopForm
@@ -520,6 +751,68 @@ function New-VirtualDesktopForm
     }
 }
 
+function New-RunSpace
+{
+    <#
+        .SYNOPSIS
+            Create a new PowerShell Runspace.
+
+        .DESCRIPTION
+            Notice: the $host variable is used for debugging purpose to write on caller PowerShell
+            Terminal.
+
+        .PARAMETER Client
+            A ClientIO object containing an active connection with a remote server.
+
+        .PARAMETER ScriptBlock
+            A PowerShell block of code to be evaluated on the new Runspace.
+
+        .PARAMETER Param
+            Optional extra parameters to be attached to Runspace.
+
+        .EXAMPLE
+            New-RunSpace -Client $newClient -ScriptBlock { Start-Sleep -Seconds 10 }
+    #>
+
+    param(
+        [Parameter(Mandatory=$True)]
+        [ClientIO] $Client,
+
+        [Parameter(Mandatory=$True)]
+        [ScriptBlock] $ScriptBlock,
+
+        [PSCustomObject] $Param = $null
+    )   
+
+    $syncHash = [HashTable]::Synchronized(@{})
+    $syncHash.Client = $Client
+    $syncHash.host = $host # For debugging purpose
+
+    if ($Param)
+    {
+        $syncHash.Param = $Param
+    }
+
+    $runspace = [RunspaceFactory]::CreateRunspace()
+    $runspace.ThreadOptions = "ReuseThread"
+    $runspace.ApartmentState = "STA"
+    $runspace.Open()                   
+
+    $runspace.SessionStateProxy.SetVariable("syncHash", $syncHash) 
+
+    $powershell = [PowerShell]::Create().AddScript($ScriptBlock)
+
+    $powershell.Runspace = $runspace
+
+    $asyncResult = $powershell.BeginInvoke()
+
+    return New-Object PSCustomObject -Property @{
+        Runspace = $runspace
+        PowerShell = $powershell
+        AsyncResult = $asyncResult
+    }
+}
+
 function Invoke-RemoteDesktopViewer
 {
     <#
@@ -533,12 +826,19 @@ function Invoke-RemoteDesktopViewer
             Remote Server Port.
 
         .PARAMETER DisableInputControl
-            If set to $true, this option disables control events on form (Mouse Clicks, Moves and Keyboard)
+            If set, this option disables control events on form (Mouse Clicks, Moves and Keyboard)
             This option is generally set to true during development when connecting to local machine to avoid funny
             things.
 
         .PARAMETER Password
             Password used during server authentication.
+
+        .PARAMETER TLSv1_3
+            Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
+            Recommended if possible.
+
+        .PARAMETER DisableVerbosity
+            Disable verbosity (not recommended)
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
@@ -548,10 +848,13 @@ function Invoke-RemoteDesktopViewer
     param (        
         [string] $ServerAddress = "127.0.0.1",
         [int] $ServerPort = 2801,
-        [bool] $DisableInputControl = $false,
-
+        [switch] $DisableInputControl,
+        [switch] $TLSv1_3,
+            
         [Parameter(Mandatory=$true)]
-        [string] $Password
+        [string] $Password,
+
+        [switch] $DisableVerbosity
     )
 
     $oldErrorActionPreference = $ErrorActionPreference
@@ -559,70 +862,36 @@ function Invoke-RemoteDesktopViewer
     try
     {
         $ErrorActionPreference = "stop"
+
+        if (-not $DisableVerbosity)
+        {
+            $VerbosePreference = "continue"
+        }
+        else 
+        {
+            $VerbosePreference = "SilentlyContinue"
+        }
+
         $VerbosePreference = "continue"
 
         Write-Banner 
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
-        Write-Verbose "Connect to server for Desktop Streaming..."
-
-        # Create Client Socket for Desktop Capture
-        $clientDesktop = [ClientIO]::New($ServerAddress, $ServerPort)
-        $clientDesktop.Connect()
-
-        if (-not $clientDesktop.Authentify($Password))
-        {
-            throw "Could not connect to target server. Authentication error."
-        }
-
-        Write-Verbose "Connection established. Waiting for session information..."
-        $jsonObject = $clientDesktop.Reader.ReadLine()
-
-        Write-Verbose $jsonObject
-
-        $sessionInformation = $jsonObject | ConvertFrom-Json
-        if (
-            (-not ($sessionInformation.PSobject.Properties.name -match "MachineName")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "Username")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "WindowsVersion")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenWidth")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenHeight")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenX")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenY")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "SessionId"))
-        )
-        {
-            throw "Invalid System Information Object. Abort connection..."
-        }        
-
-        Write-Verbose "Connect to server for Input Control..."
-
-        # Create Client Socket for Desktop Control (Mouse / Keyboard)
-        $clientControl = [ClientIO]::new($ServerAddress, $ServerPort) 
-        $clientControl.Connect()
-
-        if (-not $clientControl.Hello($sessionInformation.SessionId))
-        {
-            throw "Could not connect to target server. Session Pre-Auth Failed."
-        }
-
-        if (-not $clientControl.Authentify($Password))
-        {
-            throw "Could not connect to target server. Authentication error."
-        }
-
-        Write-Verbose "Connection established."
+        
+        $session = [ViewerSession]::New($ServerAddress, $ServerPort, $Password, $TLSv1_3)
         try
         {
-            Write-Verbose "Prepare environment. Create Virtual Desktop Form and Runspace for handling frame updates..."
+            $session.OpenSession()
+
+            Write-Verbose "Create WinForms Environment..."
 
             $virtualDesktopForm = New-VirtualDesktopForm            
 
             $virtualDesktopForm.Form.Text = [string]::Format(
                 "Power Remote Desktop: {0}/{1} - {2}", 
-                $sessionInformation.Username,
-                $sessionInformation.MachineName,
-                $sessionInformation.WindowsVersion
+                $session.SessionInformation.Username,
+                $session.SessionInformation.MachineName,
+                $session.SessionInformation.WindowsVersion
             )
 
             # Prepare Virtual Desktop 
@@ -632,8 +901,8 @@ function Invoke-RemoteDesktopViewer
             $captionHeight = $screenRect.Top - $virtualDesktopForm.Form.Top
 
             $requireResize = (
-                ($locationResolutionInformation.WorkingArea.Width -le $sessionInformation.ScreenWidth) -or
-                (($locationResolutionInformation.WorkingArea.Height - $captionHeight) -le $sessionInformation.ScreenHeight)            
+                ($locationResolutionInformation.WorkingArea.Width -le $session.SessionInformation.ScreenInformation.Width) -or
+                (($locationResolutionInformation.WorkingArea.Height - $captionHeight) -le $session.SessionInformation.ScreenInformation.Height)            
             )
 
             $virtualDesktopWidth = 0
@@ -643,13 +912,13 @@ function Invoke-RemoteDesktopViewer
 
             if ($requireResize)
             {            
-                $virtualDesktopWidth = [math]::Round(($sessionInformation.ScreenWidth * $resizeRatio) / 100)
-                $virtualDesktopHeight = [math]::Round(($sessionInformation.ScreenHeight * $resizeRatio) / 100)            
+                $virtualDesktopWidth = [math]::Round(($session.SessionInformation.ScreenInformation.Width * $resizeRatio) / 100)
+                $virtualDesktopHeight = [math]::Round(($session.SessionInformation.ScreenInformation.Height * $resizeRatio) / 100)            
             }
             else
             {
-                $virtualDesktopWidth = $sessionInformation.ScreenWidth
-                $virtualDesktopHeight = $sessionInformation.ScreenHeight
+                $virtualDesktopWidth = $session.SessionInformation.ScreenInformation.Width
+                $virtualDesktopHeight = $session.SessionInformation.ScreenInformation.Height
             }
 
             # Size Virtual Desktop Form Window
@@ -659,16 +928,7 @@ function Invoke-RemoteDesktopViewer
             $virtualDesktopForm.Form.Location = [System.Drawing.Point]::new(
                 (($locationResolutionInformation.WorkingArea.Width - $virtualDesktopForm.Form.Width) / 2),
                 (($locationResolutionInformation.WorkingArea.Height - $virtualDesktopForm.Form.Height) / 2)
-            )
-
-            # Prepare our synchronized hashtable   
-            $syncHash = [HashTable]::Synchronized(@{})         
-            $syncHash.VirtualDesktopForm = $virtualDesktopForm
-            $syncHash.Client = $clientDesktop
-            $syncHash.host = $host # Mostly for debugging 
-            $syncHash.VirtualDesktopWidth = $virtualDesktopWidth 
-            $syncHash.VirtualDesktopHeight = $virtualDesktopHeight
-            $syncHash.RequireResize = $requireResize
+            )            
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
             if (-not $DisableInputControl)                   
@@ -798,12 +1058,12 @@ function Invoke-RemoteDesktopViewer
                         $Y = ($Y * 100) / $resizeRatio
                     }
       
-                    $X += $sessionInformation.ScreenX
-                    $Y += $sessionInformation.ScreenY
+                    $X += $session.SessionInformation.ScreenInformation.X
+                    $Y += $session.SessionInformation.ScreenInformation.Y
 
                     $command = (New-MouseCommand -X $X -Y $Y -Button $Button -Type $Type)                    
 
-                    $clientControl.Writer.WriteLine(($command | ConvertTo-Json -Compress))                    
+                    $session.ClientControl.Writer.WriteLine(($command | ConvertTo-Json -Compress))                    
                 }
 
                 function Send-VirtualKeyboard
@@ -826,7 +1086,7 @@ function Invoke-RemoteDesktopViewer
 
                     $command = (New-KeyboardCommand -Keys $KeyChain)                                
 
-                    $clientControl.Writer.WriteLine(($command  | ConvertTo-Json -Compress)) 
+                    $session.ClientControl.Writer.WriteLine(($command  | ConvertTo-Json -Compress)) 
                 }
 
                 $virtualDesktopForm.Form.Add_KeyPress(
@@ -926,60 +1186,50 @@ function Invoke-RemoteDesktopViewer
                             Delta = $_.Delta
                         }
 
-                        $clientControl.Writer.WriteLine(($command | ConvertTo-Json -Compress))
+                        $session.ClientControl.Writer.WriteLine(($command | ConvertTo-Json -Compress))
                     }
                 )  
             }
 
-            Write-Verbose "Create and open new runspace..."
+            Write-Verbose "Create runspace for desktop streaming..."            
 
-            $runspace = [RunspaceFactory]::CreateRunspace()
-            $runspace.ThreadOptions = "ReuseThread"
-            $runspace.ApartmentState = "STA"
-            $runspace.Open()                                                       
+            $param = New-Object -TypeName PSCustomObject -Property @{
+                VirtualDesktopForm = $virtualDesktopForm                            
+                VirtualDesktopWidth = $virtualDesktopWidth 
+                VirtualDesktopHeight = $virtualDesktopHeight
+                RequireResize = $requireResize
+                TransportMode = $session.SessionInformation.TransportMode
+            }
 
-            $runspace.SessionStateProxy.SetVariable("syncHash", $syncHash)
+            $newRunspace = (New-RunSpace -Client $session.ClientDesktop -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  
 
-            $powershell = [PowerShell]::Create().AddScript($global:VirtualDesktopUpdaterScriptBlock)
-            $powershell.Runspace = $runspace
-            $asyncResult = $powershell.BeginInvoke()   
-
-            Write-Verbose "Done. Environment successfully created. Showing Virtual Desktop Form."                       
+            Write-Verbose "Done. Showing Virtual Desktop Form."                       
 
             $virtualDesktopForm.Form.ShowDialog() | Out-Null                         
         }
         finally
         {    
-            Write-Verbose "Virtual Desktop Form closed, free/restore environment."
+            Write-Verbose "Free environement."
 
-            if ($clientDesktop)
+            if ($session)
             {
-                $clientDesktop.Close()
-            }
+                $session.CloseSession()
 
-            if ($clientControl)
-            {
-                $clientControl.Close()
-            }
+                $session = $null
+            }            
 
-            if ($powershell) 
+            if ($newRunspace) 
             {         
-                if ($asyncResult)
-                {
-                    $powershell.EndInvoke($asyncResult) | Out-Null
-                }
-
-                $powershell.Runspace.Dispose()                  
-                $powershell.Dispose()
+                $newRunspace.PowerShell.EndInvoke($newRunspace.AsyncResult) | Out-Null                    
+                $newRunspace.PowerShell.Runspace.Dispose()                                      
+                $newRunspace.PowerShell.Dispose()  
             } 
 
-            if ($syncHash.VirtualDesktopForm.Form)
+            if ($param.VirtualDesktopForm)
             {            
-                $syncHash.VirtualDesktopForm.Form.Dispose()
+                $param.VirtualDesktopForm.Form.Dispose()
             }                                    
-        }   
-
-        Write-Verbose "Done."
+        }           
     }
     finally
     {    
