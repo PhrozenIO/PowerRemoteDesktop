@@ -47,7 +47,8 @@
         Plus, any losses or damages occurred from using these contents or the internet
         generally.
 
-    .Todo                          
+    .Todo                    
+        - [EASY] Do a deep investigation about SecureString and if it applies to current project (to protect password)
         - [EASY] Support Password Protected external Certificates.
         - [EASY] Server Fingerprint Authentication.
         - [EASY] Mutual Authentication for SSL/TLS (Client Certificate).        
