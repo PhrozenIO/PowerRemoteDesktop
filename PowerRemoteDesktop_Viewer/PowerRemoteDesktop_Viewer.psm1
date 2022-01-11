@@ -836,6 +836,9 @@ function Invoke-RemoteDesktopViewer
             Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
             Recommended if possible.
 
+        .PARAMETER DisableVerbosity
+            Disable verbosity (not recommended)
+
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
             Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort "2801" -Password "Just4TestingLocally!"
@@ -846,9 +849,11 @@ function Invoke-RemoteDesktopViewer
         [int] $ServerPort = 2801,
         [bool] $DisableInputControl = $false,
         [bool] $TLSv1_3 = $false,
-
+            
         [Parameter(Mandatory=$true)]
-        [string] $Password
+        [string] $Password,
+
+        [switch] $DisableVerbosity
     )
 
     $oldErrorActionPreference = $ErrorActionPreference
@@ -856,6 +861,16 @@ function Invoke-RemoteDesktopViewer
     try
     {
         $ErrorActionPreference = "stop"
+
+        if (-not $DisableVerbosity)
+        {
+            $VerbosePreference = "continue"
+        }
+        else 
+        {
+            $VerbosePreference = "SilentlyContinue"
+        }
+
         $VerbosePreference = "continue"
 
         Write-Banner 

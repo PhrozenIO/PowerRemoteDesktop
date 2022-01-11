@@ -1528,6 +1528,9 @@ function Invoke-RemoteDesktopServer
 
         .PARAMETER TLSv1_3
             Define whether or not TLS v1.3 must be used for communication with Viewer.
+
+        .PARAMETER DisableVerbosity
+            Disable verbosity (not recommended)
     #>
 
     param (
@@ -1540,7 +1543,9 @@ function Invoke-RemoteDesktopServer
         [string] $EncodedCertificate = "", # 2
 
         [TransportMode] $TransportMode = "Raw",
-        [bool] $TLSv1_3 = $false
+        [bool] $TLSv1_3 = $false,
+        
+        [switch] $DisableVerbosity
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1550,7 +1555,15 @@ function Invoke-RemoteDesktopServer
     try
     {
         $ErrorActionPreference = "stop"
-        $VerbosePreference = "continue"
+
+        if (-not $DisableVerbosity)
+        {
+            $VerbosePreference = "continue"
+        }
+        else 
+        {
+            $VerbosePreference = "SilentlyContinue"
+        }
 
         Write-Banner    
 
