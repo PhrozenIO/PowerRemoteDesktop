@@ -1092,6 +1092,11 @@ $global:DesktopStreamScriptBlock = {
     } 
 
     $imageQuality = 100
+    if ($syncHash.Param.ImageQuality -ge 0 -and $syncHash.Param.ImageQuality -lt 100)
+    {
+        $imageQuality = $syncHash.Param.ImageQuality
+    }
+    
     try
     {
         [System.IO.MemoryStream] $oldImageStream = New-Object System.IO.MemoryStream
@@ -1514,6 +1519,11 @@ function Invoke-RemoteDesktopServer
 
         .PARAMETER DisableVerbosity
             Disable verbosity (not recommended)
+
+        .PARAMETER ImageQuality
+            JPEG Compression level from 0 to 100
+                0 = Lowest quality.
+                100 = Highest quality.
     #>
 
     param (
@@ -1528,7 +1538,9 @@ function Invoke-RemoteDesktopServer
         [TransportMode] $TransportMode = "Raw",
         [switch] $TLSv1_3,
         
-        [switch] $DisableVerbosity
+        [switch] $DisableVerbosity,
+
+        [int] $ImageQuality = 100
     )
 
 
@@ -1644,6 +1656,7 @@ function Invoke-RemoteDesktopServer
                 $param = New-Object -TypeName PSCustomObject -Property @{                      
                     Client = $clientDesktop                
                     Screen = $screen
+                    ImageQuality = $ImageQuality
                 }
                 
                 $newRunspace = (New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                
