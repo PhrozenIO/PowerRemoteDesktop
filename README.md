@@ -183,6 +183,7 @@ Supported options:
 * `TransportMode`: (Raw or Base64) Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep the Base64 transport method as an alternative.
 * `TLSv1_3`: Define whether or not TLS v1.3 must be used for communication with Viewer.
 * `DisableVerbosity`: Disable verbosity (not recommended)
+* `ImageQuality`: JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.           
 
 If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
 
@@ -220,7 +221,7 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 
 ## Changelog
 
-### 11 January 2021 (1.0.1 Beta 2)
+### 11 January 2022 (1.0.1 Beta 2)
 
 * Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances. Base64 Transport Method is still available through an option but disabled by default.
 * Protocol has drastically changed. It is smoother to read and less prone to errors.
@@ -230,9 +231,16 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 * Possibility to disable verbose.
 * Server & Viewer version synchronization. Same version must be used between the two.
 
-### 12 January 2021 (1.0.2 Beta 3)
+### 12 January 2022 (1.0.2 Beta 3)
 
 * HDPI is completely supported.
+
+### 12 January 2022 (1.0.3 Beta 4)
+
+* Possibility to change desktop image quality.
+* Possibility to choose which screen to capture if multiple screens (Monitors) are present on remote machine.
+
+![Multi Screen Example](Assets/multi-screen.png)
 
 ### List of ideas and TODO
 
@@ -246,7 +254,6 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 * 🟠 Improve Virtual Keyboard.    
 * 🟠 Server Concurrency.
 * 🟠 Listen for local/remote screen resolution update event.
-* 🟠 Multiple Monitor Support.
 * 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 
 🟢 = Easy
