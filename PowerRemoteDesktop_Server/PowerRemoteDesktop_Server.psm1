@@ -512,19 +512,30 @@ function Get-LocalMachineInformation
 
             This function is expected to be progressively updated with new required session information.        
     #>
-    $screenBounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    
+    $screens = @()
+
+    $i = 0
+    foreach ($screen in ([System.Windows.Forms.Screen]::AllScreens | Sort-Object -Property Primary -Descending))
+    {
+        $i++
+
+        $screens += New-Object -TypeName PSCustomObject -Property @{
+            Id = $i
+            Name = $screen.DeviceName
+            Primary = $screen.Primary
+            Width = $screen.Bounds.Width
+            Height = $screen.Bounds.Height
+            X = $screen.Bounds.X 
+            Y = $screen.Bounds.Y
+        }
+    }
 
     return New-Object PSCustomObject -Property @{    
         MachineName = [Environment]::MachineName
         Username = [Environment]::UserName
         WindowsVersion = [Environment]::OSVersion.VersionString
-
-        ScreenInformation = New-Object -TypeName PSCustomObject -Property @{
-            Width = $screenBounds.Width
-            Height = $screenBounds.Height
-            X = $screenBounds.X 
-            Y = $screenBounds.Y 
-        }
+        Screens = ($screens)
     }
 }
 
@@ -532,10 +543,11 @@ class ServerSession {
     <#
         .SYNOPSIS
             PowerRemoteDesktop Session Class.
-    #>
+    #>    
 
     [string] $Id = ""
     [string] $TiedAddress = ""
+    [string] $Screen = ""
 
     ServerSession([string] $RemoteAddress) {
         <#
@@ -548,11 +560,10 @@ class ServerSession {
         #>
 
         $this.Id = (SHA512FromString -String (-join ((33..126) | Get-Random -Count 128 | ForEach-Object{[char] $_})))
-        $this.TiedAddress = $RemoteAddress
+        $this.TiedAddress = $RemoteAddress        
     }
 
-    [bool] CompareWith([string] $Id, [string] $RemoteAddress)
-    {
+    [bool] CompareWith([string] $Id, [string] $RemoteAddress) {
         return ($this.Id -eq $Id) -and ($this.TiedAddress -eq $RemoteAddress)
     }
 }
@@ -757,6 +768,15 @@ class ClientIO {
         Write-Verbose "Sending Session Information with Local System Information..."
 
         $this.Writer.WriteLine(($sessionInformation | ConvertTo-Json -Compress))
+
+        if ($sessionInformation.Screens.Length -gt 1)
+        {
+            Write-Verbose "Current system have $($sessionInformation.Screens.Length) Screens. Waiting for Remote Viewer to choose which screen to capture."
+
+            $screenName = $this.Reader.ReadLine()
+
+            $session.Screen = $screenName            
+        }
 
         Write-Verbose "Handshake done."
 
@@ -1024,24 +1044,28 @@ $global:DesktopStreamScriptBlock = {
             .SYNOPSIS
                 Return a snapshot of primary screen desktop.
 
-            .DESCRIPTION
-                Notice:
-                    At this time, PowerRemoteDesktop only supports PrimaryScreen.
-                    Even if multi-screen capture is a very easy feature to implement, It will probably be present
-                    in final version 1.0
+            .PARAMETER Screen
+                Define target screen to capture (if multiple monitor exists).
+                Default is primary screen
         #>
+        param (
+            [System.Windows.Forms.Screen] $Screen = $null
+        )
         try 
         {	
-            $primaryDesktop = [System.Windows.Forms.Screen]::PrimaryScreen
+            if (-not $Screen)
+            {
+                $Screen = [System.Windows.Forms.Screen]::PrimaryScreen
+            }            
 
             $size = New-Object System.Drawing.Size(
-                $primaryDesktop.Bounds.Size.Width,
-                $primaryDesktop.Bounds.Size.Height
+                $Screen.Bounds.Size.Width,
+                $Screen.Bounds.Size.Height
             )
 
             $location = New-Object System.Drawing.Point(
-                $primaryDesktop.Bounds.Location.X,
-                $primaryDesktop.Bounds.Location.Y
+                $Screen.Bounds.Location.X,
+                $Screen.Bounds.Location.Y
             )
 
             $bitmap = New-Object System.Drawing.Bitmap($size.Width, $size.Height)
@@ -1083,7 +1107,7 @@ $global:DesktopStreamScriptBlock = {
         {           
             try
             {                                                           
-                $desktopImage = Get-DesktopImage                                                                    
+                $desktopImage = Get-DesktopImage -Screen $syncHash.Param.Screen                                                                   
 
                 $imageStream = New-Object System.IO.MemoryStream
 
@@ -1613,11 +1637,15 @@ function Invoke-RemoteDesktopServer
                 # Remote Viewer will then need to establish a new session from scratch.
                 $clientControl = $server.PullClient(10 * 1000);           
 
+                # Grab desired screen to capture
+                $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { $_.DeviceName -eq $server.Session.Screen }
+
                 # Create Runspace #1 for Desktop Streaming.
                 $param = New-Object -TypeName PSCustomObject -Property @{                      
                     Client = $clientDesktop                
+                    Screen = $screen
                 }
-
+                
                 $newRunspace = (New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                
                 $runspaces.Add($newRunspace)
 
