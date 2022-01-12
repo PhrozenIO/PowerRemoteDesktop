@@ -32,7 +32,7 @@ I consider this version as stable but I want to do more tests and have more feed
 
 I also want to implement few additional features before releasing the version 1.
 
-## Extended Installation (For Viewer and/or Server)
+## Installation
 
 You will find multiple ways to use this PowerShell Applications. Recommended method would be to install both Server and Viewer using the PowerShell Gallery but you can also do it manually as an installed module or imported script.
 
@@ -43,6 +43,7 @@ You can install Power Remote Desktop from PowerShell Gallery. See PowerShell Gal
 Run the following commands:
 
 `Install-Module -Name PowerRemoteDesktop_Server -AllowPrerelease`
+
 `Install-Module -Name PowerRemoteDesktop_Viewer -AllowPrerelease`
 
 `AllowPrerelease` is mandatory when current version is marked as a *Prerelease*
@@ -82,6 +83,7 @@ Manifest   1.0.0      PowerRemoteDesktop_Viewer           Invoke-RemoteDesktopVi
 If you don't see them, run the following commands and check back.
 
 `Import-Module PowerRemoteDesktop_Server`
+
 `Import-Module PowerRemoteDesktop_Viewer`
 
 ### Install as a PowerShell Module (Manually / Unmanaged)
@@ -128,6 +130,7 @@ Manifest   1.0.0      PowerRemoteDesktop_Viewer           Invoke-RemoteDesktopVi
 If you don't see them, run the following commands and check back.
 
 `Import-Module PowerRemoteDesktop_Server`
+
 `Import-Module PowerRemoteDesktop_Viewer`
 
 Notice: Manifest files are optional (`*.psd1`) and can be removed.
@@ -229,19 +232,23 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 
 ### List of ideas and TODO
 
-* [EASY] Do a deep investigation about SecureString and if it applies to current project (to protect password)                    
-* [EASY] Support Password Protected external Certificates.
-* [EASY] Server Fingerprint Authentication.
-* [EASY] Mutual Authentication for SSL/TLS (Client Certificate).        
-* [EASY] Synchronize Cursor State.                
-* [EASY] Synchronize Clipboard. 
-* [MEDIUM] Keep-Alive system to implement Read / Write Timeout.
-* [MEDIUM] Improve Virtual Keyboard.    
-* [MEDIUM] Server Concurrency.
-* [MEDIUM] Listen for local/remote screen resolution update event.
-* [MEDIUM] Multiple Monitor Support.
-* [MEDIUM] Improve HDPI Scaling / Quality.
-* [MEDIUM+] Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
+* 🟢 Do a deep investigation about SecureString and if it applies to current project (to protect password)                    
+* 🟢 Support Password Protected external Certificates.
+* 🟢 Server Fingerprint Authentication.
+* 🟢 Mutual Authentication for SSL/TLS (Client Certificate).        
+* 🟢 Synchronize Cursor State.                
+* 🟢 Synchronize Clipboard. 
+* 🟠 Keep-Alive system to implement Read / Write Timeout.
+* 🟠 Improve Virtual Keyboard.    
+* 🟠 Server Concurrency.
+* 🟠 Listen for local/remote screen resolution update event.
+* 🟠 Multiple Monitor Support.
+* 🟠 Improve HDPI Scaling / Quality.
+* 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
+
+🟢 = Easy
+🟠 = Medium
+🔴 = Hard
 
 # Disclaimer
 
