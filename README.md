@@ -6,32 +6,20 @@
 
 <img src="Screenshot 2022-01-07 at 16.43.53.png" width="100%"/>
 
-As the name suggests, Power Remote Desktop is a Remote Desktop application entirely coded in PowerShell.
+*Power Remote Desktop* is a fully functional Remote Desktop Application entirely coded in PowerShell.
 
-It does not rely in any existing remote desktop application / protocol to function. It is a remote desktop application completely coded from scratch.
+It doesn't rely on any existing Remote Desktop Application or Protocol to function. A serious advantage of this application is its nature (PowerShell) and its ease of use and installation.
 
-Even the Viewer part (Including the GUI) is coded in PowerShell with the help of WinForms API.
+This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows Terminal (cmd).
 
 Tested on:
 
 * Windows 10 - PowerShell Version: 5.1.19041.1320
 * Windows 11 - PowerShell Version: 5.1.22000.282
 
-## Changelog
-
-### 11 January 2021
-
-* Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances. Base64 Transport Method is still available through an option but disabled by default.
-* Protocol has drastically changed. It is smoother to read and less prone to errors.
-* TLS v1.3 option added (Might not be supported by some systems).
-* Several code optimization, refactoring and fixes.
-* Password complexity check implemented to avoid lazy passwords.
-* Possibility to disable verbose.
-* Server & Viewer version synchronization. Same version must be used between the two.
-
 ## Features
 
-* Captures Remote Desktop Image with support of HDPI.
+* Captures Remote Desktop Image with support of HDPI (Beta).
 * Supports Mouse Click (Left, Right, Middle), Mouse Moves and Mouse Wheel.
 * Supports Keystrokes Simulation (Sending remote key strokes) and few useful shortcuts.
 * Traffic is encrypted by default using TLSv1.2 and optionnally using TLSv1.3 (TLS 1.3 might not be possible on older systems).
@@ -44,50 +32,116 @@ I consider this version as stable but I want to do more tests and have more feed
 
 I also want to implement few additional features before releasing the version 1.
 
-## Extended TODO List
+## Extended Installation (For Viewer and/or Server)
+
+You will find multiple ways to use this PowerShell Applications. Recommended method would be to install both Server and Viewer using the PowerShell Gallery but you can also do it manually as an installed module or imported script.
+
+### Install as a PowerShell Module from PowerShell Gallery (Recommended)
+
+You can install Power Remote Desktop from PowerShell Gallery. See PowerShell Gallery as the 'equivalent' of Aptitude for Debian or Brew for MacOS.
+
+Run the following commands:
+
+`Install-Module -Name PowerRemoteDesktop_Server -AllowPrerelease`
+`Install-Module -Name PowerRemoteDesktop_Viewer -AllowPrerelease`
+
+`AllowPrerelease` is mandatory when current version is marked as a *Prerelease*
+
+Your command prompt will show the following warning:
 
 ```
-* [EASY] Do a deep investigation about SecureString and if it applies to current project (to protect password)                    
-* [EASY] Support Password Protected external Certificates.
-* [EASY] Server Fingerprint Authentication.
-* [EASY] Mutual Authentication for SSL/TLS (Client Certificate).        
-* [EASY] Synchronize Cursor State.                
-* [EASY] Synchronize Clipboard. 
-* [MEDIUM] Keep-Alive system to implement Read / Write Timeout.
-* [MEDIUM] Improve Virtual Keyboard.    
-* [MEDIUM] Server Concurrency.
-* [MEDIUM] Listen for local/remote screen resolution update event.
-* [MEDIUM] Multiple Monitor Support.
-* [MEDIUM] Improve HDPI Scaling / Quality.
-* [MEDIUM+] Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
+Untrusted repository
+You are installing the modules from an untrusted repository. If you trust this repository, change its
+InstallationPolicy value by running the Set-PSRepository cmdlet. Are you sure you want to install the modules from
+'PSGallery'?
 ```
 
-## Installation (For Viewer and/or Server)
+Answer `Y` to proceed installation.
 
-You can use this script both as a PowerShell Module or Raw Script (Pasted, from Encoded Base64 String, DownloadString(...) etc...).
+Both modules should now be available, you can verify using the command:
 
-### As a Module
+`Get-Module -ListAvailable`
 
-Choose a registered PowerShell Module location (see echo $env:PSModulePath)
+Example Output:
 
-Create a folder called PowerRemoteDesktop_[Viewer/Server] and place the PowerRemoteDesktop_[Viewer/Server].psm1 file inside the new folder.
+```
+PS C:\Users\Phrozen\Desktop> Get-Module -ListAvailable
 
-Open a new PowerShell Window and enter Import-Module PowerRemoteDesktop_[Viewer/Server]
 
-The module should be imported with available functions:
+    Directory: C:\Users\Phrozen\Documents\WindowsPowerShell\Modules
 
-* `Invoke-RemoteDesktopViewer` in the case of `PowerRemoteDesktop_Viewer.psm1`
-* `Invoke-RemoteDesktopServer` in the case of `PowerRemoteDesktop_Server.psm1`
 
-### As a Raw Script
+ModuleType Version    Name                                ExportedCommands
+---------- -------    ----                                ----------------
+Manifest   1.0.0      PowerRemoteDesktop_Server           Invoke-RemoteDesktopServer
+Manifest   1.0.0      PowerRemoteDesktop_Viewer           Invoke-RemoteDesktopViewer
 
-You can import both scripts alternatively by:
+<..snip..>
+```
 
-* Pasting the whole code to a new PowerShell window
-* `IEX (Get-Content .\PowerRemoteDesktop_[Viewer/Server].psm1 -Raw)`
-* Importing a Base64 encoded version of the code through IEX/Invoke-Expression
-* Remote Location through DownloadString(...) then IEX/Invoke-Expression
-* Your imagination
+If you don't see them, run the following commands and check back.
+
+`Import-Module PowerRemoteDesktop_Server`
+`Import-Module PowerRemoteDesktop_Viewer`
+
+### Install as a PowerShell Module (Manually / Unmanaged)
+
+To be available, the module must first be present in a registered module path.
+
+You can list module paths with following command:
+
+`Write-Output $env:PSModulePath`
+
+Example Output:
+
+```
+C:\Users\Phrozen\Documents\WindowsPowerShell\Modules;C:\Program Files\WindowsPowerShell\Modules;C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules
+```
+
+Clone PowerRemoteDesktop repository or download a Github release package.
+
+`git clone https://github.com/DarkCoderSc/PowerRemoteDesktop.git`
+
+Copy both *PowerRemoteDesktop_Viewer* and *PowerRemoteDesktop_Server* folders to desired module path (Ex: `C:\Users\<USER>\Documents\WindowsPowerShell\Modules`)
+
+Both modules should now be available, you can verify using the command:
+
+`Get-Module -ListAvailable`
+
+Example Output:
+
+```
+PS C:\Users\Phrozen\Desktop> Get-Module -ListAvailable
+
+
+    Directory: C:\Users\Phrozen\Documents\WindowsPowerShell\Modules
+
+
+ModuleType Version    Name                                ExportedCommands
+---------- -------    ----                                ----------------
+Manifest   1.0.0      PowerRemoteDesktop_Server           Invoke-RemoteDesktopServer
+Manifest   1.0.0      PowerRemoteDesktop_Viewer           Invoke-RemoteDesktopViewer
+
+<..snip..>
+```
+
+If you don't see them, run the following commands and check back.
+
+`Import-Module PowerRemoteDesktop_Server`
+`Import-Module PowerRemoteDesktop_Viewer`
+
+Notice: Manifest files are optional (`*.psd1`) and can be removed.
+
+### As a PowerShell Script
+
+It is not mandatory to install this application as a PowerShell module (Even if file extension is `*.psm1`)
+
+You can also load it as a PowerShell Script. Multiple methods exists including:
+
+* Invoking Commands Using: `IEX (Get-Content .\PowerRemoteDesktop_Viewer.psm1 -Raw)` and `IEX (Get-Content .\PowerRemoteDesktop_[Server/Viewer].psm1 -Raw)`
+* Loading script from a remote location: `IEX (New-Object Net.WebClient).DownloadString('http://127.0.0.1/PowerRemoteDesktop_[Server/Viewer].psm1)`
+
+etc...
 
 ## Usage
 
@@ -160,6 +214,18 @@ First encode your certificate file as base64 string.
 `base64 -i phrozen.p12`
 
 Then pass the encoded string to parameter `EncodedCertificate`.
+
+## Changelog
+
+### 11 January 2021
+
+* Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances. Base64 Transport Method is still available through an option but disabled by default.
+* Protocol has drastically changed. It is smoother to read and less prone to errors.
+* TLS v1.3 option added (Might not be supported by some systems).
+* Several code optimization, refactoring and fixes.
+* Password complexity check implemented to avoid lazy passwords.
+* Possibility to disable verbose.
+* Server & Viewer version synchronization. Same version must be used between the two.
 
 # Disclaimer
 
