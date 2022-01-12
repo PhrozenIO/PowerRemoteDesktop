@@ -53,7 +53,7 @@ Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.beta.3"
+$global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
 
 enum TransportMode {
     Raw = 1
@@ -1096,7 +1096,6 @@ $global:DesktopStreamScriptBlock = {
     {
         $imageQuality = $syncHash.Param.ImageQuality
     }
-    
     try
     {
         [System.IO.MemoryStream] $oldImageStream = New-Object System.IO.MemoryStream

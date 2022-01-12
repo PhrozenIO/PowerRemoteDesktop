@@ -52,7 +52,7 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.beta.3"
+$global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
 
 function Write-Banner 
 {
