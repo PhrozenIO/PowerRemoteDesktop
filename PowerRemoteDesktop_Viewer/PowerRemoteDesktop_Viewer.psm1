@@ -50,8 +50,7 @@
 -------------------------------------------------------------------------------#>
 
 Add-Type -Assembly System.Windows.Forms
-Add-Type -MemberDefinition '[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);' -Name GDI32 -Namespace W;
-Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern int GetDC(IntPtr hWnd);[DllImport("User32.dll")] public static extern int ReleaseDC(IntPtr hwnd, int hdc);[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
+Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
 $global:PowerRemoteDesktopVersion = "1.0.beta.3"
 
@@ -81,24 +80,6 @@ function Write-Banner
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
 }
-
-function Get-ResolutionScaleFactor    
-{
-    <#
-        .SYNOPSIS
-            Return current screen scale factor
-    #>
-
-    $hdc = [W.User32]::GetDC(0)
-    try
-    {
-        return [W.GDI32]::GetDeviceCaps($hdc, 117) / [W.GDI32]::GetDeviceCaps($hdc, 10)
-    }
-    finally
-    {
-        [W.User32]::ReleaseDC(0, $hdc) | Out-Null
-    }        
-}   
 
 function Get-SHA512FromString
 {
@@ -881,10 +862,7 @@ function Invoke-RemoteDesktopViewer
 
         Write-Banner 
 
-        if (Get-ResolutionScaleFactor -ne 1)
-        {
-            [W.User32]::SetProcessDPIAware()
-        }
+        [W.User32]::SetProcessDPIAware() | Out-Null
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
         
