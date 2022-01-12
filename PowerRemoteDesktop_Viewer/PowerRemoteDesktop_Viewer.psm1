@@ -50,6 +50,8 @@
 -------------------------------------------------------------------------------#>
 
 Add-Type -Assembly System.Windows.Forms
+Add-Type -MemberDefinition '[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);' -Name GDI32 -Namespace W;
+Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern int GetDC(IntPtr hWnd);[DllImport("User32.dll")] public static extern int ReleaseDC(IntPtr hwnd, int hdc);[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
 $global:PowerRemoteDesktopVersion = "1.0.beta.2"
 
@@ -79,6 +81,24 @@ function Write-Banner
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
 }
+
+function Get-ResolutionScaleFactor    
+{
+    <#
+        .SYNOPSIS
+            Return current screen scale factor
+    #>
+
+    $hdc = [W.User32]::GetDC(0)
+    try
+    {
+        return [W.GDI32]::GetDeviceCaps($hdc, 117) / [W.GDI32]::GetDeviceCaps($hdc, 10)
+    }
+    finally
+    {
+        [W.User32]::ReleaseDC(0, $hdc) | Out-Null
+    }        
+}   
 
 function Get-SHA512FromString
 {
@@ -860,6 +880,11 @@ function Invoke-RemoteDesktopViewer
         $VerbosePreference = "continue"
 
         Write-Banner 
+
+        if (Get-ResolutionScaleFactor -ne 1)
+        {
+            [W.User32]::SetProcessDPIAware()
+        }
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
         
@@ -885,9 +910,13 @@ function Invoke-RemoteDesktopViewer
             $screenRect = $virtualDesktopForm.Form.RectangleToScreen($virtualDesktopForm.Form.ClientRectangle)
             $captionHeight = $screenRect.Top - $virtualDesktopForm.Form.Top
 
+            $localScreenWidth = $locationResolutionInformation.WorkingArea.Width
+            $localScreenHeight = $locationResolutionInformation.WorkingArea.Height           
+            $localScreenHeight -= $captionHeight
+
             $requireResize = (
-                ($locationResolutionInformation.WorkingArea.Width -le $session.SessionInformation.ScreenInformation.Width) -or
-                (($locationResolutionInformation.WorkingArea.Height - $captionHeight) -le $session.SessionInformation.ScreenInformation.Height)            
+                ($localScreenWidth -le $session.SessionInformation.ScreenInformation.Width) -or
+                ($localScreenHeight -le $session.SessionInformation.ScreenInformation.Height)            
             )
 
             $virtualDesktopWidth = 0
@@ -897,11 +926,27 @@ function Invoke-RemoteDesktopViewer
 
             if ($requireResize)
             {            
-                $virtualDesktopWidth = [math]::Round(($session.SessionInformation.ScreenInformation.Width * $resizeRatio) / 100)
-                $virtualDesktopHeight = [math]::Round(($session.SessionInformation.ScreenInformation.Height * $resizeRatio) / 100)            
+                $adjustVertically = $localScreenWidth -gt $localScreenHeight
+
+                if ($adjustVertically)
+                {
+                    $virtualDesktopWidth = [math]::Round(($localScreenWidth * $resizeRatio) / 100)
+                    
+                    $remoteResizedRatio = [math]::Round(($virtualDesktopWidth * 100) / $session.SessionInformation.ScreenInformation.Width)
+
+                    $virtualDesktopHeight = [math]::Round(($session.SessionInformation.ScreenInformation.Height * $remoteResizedRatio) / 100)
+                }
+                else
+                {
+                    $virtualDesktopHeight = [math]::Round(($localScreenHeight * $resizeRatio) / 100)
+                    
+                    $remoteResizedRatio = [math]::Round(($virtualDesktopHeight * 100) / $session.SessionInformation.ScreenInformation.Height)
+
+                    $virtualDesktopWidth = [math]::Round(($session.SessionInformation.ScreenInformation.Width * $remoteResizedRatio) / 100)
+                }                        
             }
             else
-            {
+            {            
                 $virtualDesktopWidth = $session.SessionInformation.ScreenInformation.Width
                 $virtualDesktopHeight = $session.SessionInformation.ScreenInformation.Height
             }
@@ -911,8 +956,8 @@ function Invoke-RemoteDesktopViewer
 
             # Center Virtual Desktop Form
             $virtualDesktopForm.Form.Location = [System.Drawing.Point]::new(
-                (($locationResolutionInformation.WorkingArea.Width - $virtualDesktopForm.Form.Width) / 2),
-                (($locationResolutionInformation.WorkingArea.Height - $virtualDesktopForm.Form.Height) / 2)
+                (($localScreenWidth - $virtualDesktopForm.Form.Width) / 2),
+                (($localScreenHeight - $virtualDesktopForm.Form.Height) / 2)
             )            
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
