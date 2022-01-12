@@ -227,6 +227,22 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 * Possibility to disable verbose.
 * Server & Viewer version synchronization. Same version must be used between the two.
 
+### List of ideas and TODO
+
+* [EASY] Do a deep investigation about SecureString and if it applies to current project (to protect password)                    
+* [EASY] Support Password Protected external Certificates.
+* [EASY] Server Fingerprint Authentication.
+* [EASY] Mutual Authentication for SSL/TLS (Client Certificate).        
+* [EASY] Synchronize Cursor State.                
+* [EASY] Synchronize Clipboard. 
+* [MEDIUM] Keep-Alive system to implement Read / Write Timeout.
+* [MEDIUM] Improve Virtual Keyboard.    
+* [MEDIUM] Server Concurrency.
+* [MEDIUM] Listen for local/remote screen resolution update event.
+* [MEDIUM] Multiple Monitor Support.
+* [MEDIUM] Improve HDPI Scaling / Quality.
+* [MEDIUM+] Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
+
 # Disclaimer
 
 We are doing our best to prepare the content of this app. However, PHROZEN SASU cannot
