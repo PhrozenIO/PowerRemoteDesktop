@@ -4,7 +4,7 @@
 
 # PowerRemoteDesktop
 
-<img src="Screenshot 2022-01-07 at 16.43.53.png" width="100%"/>
+<img src="demo.png" width="100%"/>
 
 *Power Remote Desktop* is a fully functional Remote Desktop Application entirely coded in PowerShell.
 
@@ -19,7 +19,7 @@ Tested on:
 
 ## Features
 
-* Captures Remote Desktop Image with support of HDPI (Beta).
+* Captures Remote Desktop Image with support of HDPI.
 * Supports Mouse Click (Left, Right, Middle), Mouse Moves and Mouse Wheel.
 * Supports Keystrokes Simulation (Sending remote key strokes) and few useful shortcuts.
 * Traffic is encrypted by default using TLSv1.2 and optionnally using TLSv1.3 (TLS 1.3 might not be possible on older systems).
@@ -220,7 +220,7 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 
 ## Changelog
 
-### 11 January 2021
+### 11 January 2021 (1.0.1 Beta 2)
 
 * Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances. Base64 Transport Method is still available through an option but disabled by default.
 * Protocol has drastically changed. It is smoother to read and less prone to errors.
@@ -229,6 +229,10 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 * Password complexity check implemented to avoid lazy passwords.
 * Possibility to disable verbose.
 * Server & Viewer version synchronization. Same version must be used between the two.
+
+### 12 January 2021 (1.0.2 Beta 3)
+
+* HDPI is completely supported.
 
 ### List of ideas and TODO
 
@@ -243,7 +247,6 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 * 🟠 Server Concurrency.
 * 🟠 Listen for local/remote screen resolution update event.
 * 🟠 Multiple Monitor Support.
-* 🟠 Improve HDPI Scaling / Quality.
 * 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 
 🟢 = Easy

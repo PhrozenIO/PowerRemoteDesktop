@@ -52,9 +52,9 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);' -Name GDI32 -Namespace W;
-Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern int GetDC(IntPtr hWnd);[DllImport("User32.dll")] public static extern int ReleaseDC(IntPtr hwnd, int hdc);' -Name User32 -Namespace W;
+Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern int GetDC(IntPtr hWnd);[DllImport("User32.dll")] public static extern int ReleaseDC(IntPtr hwnd, int hdc);[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.beta.2"
+$global:PowerRemoteDesktopVersion = "1.0.beta.3"
 
 enum TransportMode {
     Raw = 1
@@ -501,6 +501,24 @@ function Resolve-AuthenticationChallenge
     return $solution
 }
 
+function Get-ResolutionScaleFactor    
+{
+    <#
+        .SYNOPSIS
+            Return current screen scale factor
+    #>
+
+    $hdc = [W.User32]::GetDC(0)
+    try
+    {
+        return [W.GDI32]::GetDeviceCaps($hdc, 117) / [W.GDI32]::GetDeviceCaps($hdc, 10)
+    }
+    finally
+    {
+        [W.User32]::ReleaseDC(0, $hdc) | Out-Null
+    }        
+}   
+
 function Get-LocalMachineInformation
 {
     <#
@@ -521,10 +539,10 @@ function Get-LocalMachineInformation
         WindowsVersion = [Environment]::OSVersion.VersionString
 
         ScreenInformation = New-Object -TypeName PSCustomObject -Property @{
-            Width = $screenBounds.Width    
+            Width = $screenBounds.Width
             Height = $screenBounds.Height
-            X = $screenBounds.X
-            Y = $screenBounds.Y
+            X = $screenBounds.X 
+            Y = $screenBounds.Y 
         }
     }
 }
@@ -1018,25 +1036,7 @@ $global:DesktopStreamScriptBlock = {
         .PARAMETER syncHash.Param.Client
             A ClientIO Object containing an active connection. This is where, desktop updates will be
             sent over network.     
-    #>
-
-    function Get-ResolutionScaleFactor    
-    {
-        <#
-            .SYNOPSIS
-                Return the scale factor of target screen to capture.
-        #>
-
-        $hdc = [W.User32]::GetDC(0)
-        try
-        {
-            return [W.GDI32]::GetDeviceCaps($hdc, 117) / [W.GDI32]::GetDeviceCaps($hdc, 10)
-        }
-        finally
-        {
-            [W.User32]::ReleaseDC(0, $hdc) | Out-Null
-        }        
-    }    
+    #>     
 
     function Get-DesktopImage {	
         <#
@@ -1048,25 +1048,19 @@ $global:DesktopStreamScriptBlock = {
                     At this time, PowerRemoteDesktop only supports PrimaryScreen.
                     Even if multi-screen capture is a very easy feature to implement, It will probably be present
                     in final version 1.0
-
-            .PARAMETER ScaleFactor
-                Define target monitor scale factor to adjust bounds.
         #>
-        param (
-            [int] $ScaleFactor = 1
-        )
         try 
         {	
             $primaryDesktop = [System.Windows.Forms.Screen]::PrimaryScreen
 
             $size = New-Object System.Drawing.Size(
-                ($primaryDesktop.Bounds.Size.Width * $ScaleFactor),
-                ($primaryDesktop.Bounds.Size.Height * $ScaleFactor)
+                $primaryDesktop.Bounds.Size.Width,
+                $primaryDesktop.Bounds.Size.Height
             )
 
             $location = New-Object System.Drawing.Point(
-                ($primaryDesktop.Bounds.Location.X * $ScaleFactor),
-                ($primaryDesktop.Bounds.Location.Y * $ScaleFactor)
+                $primaryDesktop.Bounds.Location.X,
+                $primaryDesktop.Bounds.Location.Y
             )
 
             $bitmap = New-Object System.Drawing.Bitmap($size.Width, $size.Height)
@@ -1102,15 +1096,13 @@ $global:DesktopStreamScriptBlock = {
         $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
         $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, $imageQuality)
 
-        $scaleFactor = Get-ResolutionScaleFactor
-
-        $packetSize = 4096
+        $packetSize = 4096        
 
         while ($true)
         {           
             try
             {                                                           
-                $desktopImage = Get-DesktopImage -ScaleFactor 1                                                                     
+                $desktopImage = Get-DesktopImage                                                                    
 
                 $imageStream = New-Object System.IO.MemoryStream
 
@@ -1534,6 +1526,7 @@ function Invoke-RemoteDesktopServer
         [switch] $DisableVerbosity
     )
 
+
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
 
     $oldErrorActionPreference = $ErrorActionPreference
@@ -1552,6 +1545,11 @@ function Invoke-RemoteDesktopServer
         }
 
         Write-Banner    
+
+        if (Get-ResolutionScaleFactor -ne 1)
+        {
+            [W.User32]::SetProcessDPIAware()
+        }    
 
         if (-not (Test-Administrator) -and -not $CertificateFile -and -not $EncodedCertificate)
         {
@@ -1638,8 +1636,7 @@ function Invoke-RemoteDesktopServer
                 $clientControl = $server.PullClient(10 * 1000);           
 
                 # Create Runspace #1 for Desktop Streaming.
-                $param = New-Object -TypeName PSCustomObject -Property @{
-                    TransportMode = $TransportMode    
+                $param = New-Object -TypeName PSCustomObject -Property @{                      
                     Client = $clientDesktop                
                 }
 
