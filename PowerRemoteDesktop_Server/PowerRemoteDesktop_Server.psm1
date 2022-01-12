@@ -96,7 +96,7 @@ function Test-PasswordComplexity
         .DESCRIPTION
             To return True, Password must follow bellow complexity rules:
                 * Minimum 12 Characters.
-                * One of following symbols: "!@#$%^&*_".
+                * One of following symbols: "!@#%^&*_".
                 * At least of lower case character.
                 * At least of upper case character. 
 
@@ -108,7 +108,7 @@ function Test-PasswordComplexity
         [string] $PasswordCandidate
     )
 
-    $complexityRules = "(?=^.{12,}$)(?=.*[!@#$%^&*_]+)(?=.*[a-z])(?=.*[A-Z]).*$"
+    $complexityRules = "(?=^.{12,}$)(?=.*[!@#%^&*_]+)(?=.*[a-z])(?=.*[A-Z]).*$"
 
     return ($PasswordCandidate -match $complexityRules)
 }
@@ -1585,8 +1585,8 @@ function Invoke-RemoteDesktopServer
         if (-not $Password)
         {
             $Password = (
-                # a-Z, 0-9, !@#$%^&*_
-                -join ((48..57) + (64..90) + (35..38) + 33 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
+                # a-Z, 0-9, !@#%^&*_
+                -join ((48..57) + (64..90) + 35 + (37..38) + 33 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
             )
             
             Write-Host -NoNewLine "Server password: """
@@ -1599,7 +1599,7 @@ function Invoke-RemoteDesktopServer
             {
                 throw "Password complexity is too weak. Please choose a password following following rules:`r`n`
                 * Minimum 12 Characters`r`n`
-                * One of following symbols: ""!@#$%^&*_""`r`n`
+                * One of following symbols: ""!@#%^&*_""`r`n`
                 * At least of lower case character`r`n`
                 * At least of upper case character`r`n"
             }
