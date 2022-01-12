@@ -51,10 +51,9 @@
 
 Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
-Add-Type -MemberDefinition '[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);' -Name GDI32 -Namespace W;
-Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern int GetDC(IntPtr hWnd);[DllImport("User32.dll")] public static extern int ReleaseDC(IntPtr hwnd, int hdc);[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
+Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.beta.3"
+$global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
 
 enum TransportMode {
     Raw = 1
@@ -97,7 +96,7 @@ function Test-PasswordComplexity
         .DESCRIPTION
             To return True, Password must follow bellow complexity rules:
                 * Minimum 12 Characters.
-                * One of following symbols: "!@#$%^&*_".
+                * One of following symbols: "!@#%^&*_".
                 * At least of lower case character.
                 * At least of upper case character. 
 
@@ -109,7 +108,7 @@ function Test-PasswordComplexity
         [string] $PasswordCandidate
     )
 
-    $complexityRules = "(?=^.{12,}$)(?=.*[!@#$%^&*_]+)(?=.*[a-z])(?=.*[A-Z]).*$"
+    $complexityRules = "(?=^.{12,}$)(?=.*[!@#%^&*_]+)(?=.*[a-z])(?=.*[A-Z]).*$"
 
     return ($PasswordCandidate -match $complexityRules)
 }
@@ -501,24 +500,6 @@ function Resolve-AuthenticationChallenge
     return $solution
 }
 
-function Get-ResolutionScaleFactor    
-{
-    <#
-        .SYNOPSIS
-            Return current screen scale factor
-    #>
-
-    $hdc = [W.User32]::GetDC(0)
-    try
-    {
-        return [W.GDI32]::GetDeviceCaps($hdc, 117) / [W.GDI32]::GetDeviceCaps($hdc, 10)
-    }
-    finally
-    {
-        [W.User32]::ReleaseDC(0, $hdc) | Out-Null
-    }        
-}   
-
 function Get-LocalMachineInformation
 {
     <#
@@ -531,19 +512,30 @@ function Get-LocalMachineInformation
 
             This function is expected to be progressively updated with new required session information.        
     #>
-    $screenBounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    
+    $screens = @()
+
+    $i = 0
+    foreach ($screen in ([System.Windows.Forms.Screen]::AllScreens | Sort-Object -Property Primary -Descending))
+    {
+        $i++
+
+        $screens += New-Object -TypeName PSCustomObject -Property @{
+            Id = $i
+            Name = $screen.DeviceName
+            Primary = $screen.Primary
+            Width = $screen.Bounds.Width
+            Height = $screen.Bounds.Height
+            X = $screen.Bounds.X 
+            Y = $screen.Bounds.Y
+        }
+    }
 
     return New-Object PSCustomObject -Property @{    
         MachineName = [Environment]::MachineName
         Username = [Environment]::UserName
         WindowsVersion = [Environment]::OSVersion.VersionString
-
-        ScreenInformation = New-Object -TypeName PSCustomObject -Property @{
-            Width = $screenBounds.Width
-            Height = $screenBounds.Height
-            X = $screenBounds.X 
-            Y = $screenBounds.Y 
-        }
+        Screens = ($screens)
     }
 }
 
@@ -551,10 +543,11 @@ class ServerSession {
     <#
         .SYNOPSIS
             PowerRemoteDesktop Session Class.
-    #>
+    #>    
 
     [string] $Id = ""
     [string] $TiedAddress = ""
+    [string] $Screen = ""
 
     ServerSession([string] $RemoteAddress) {
         <#
@@ -567,11 +560,10 @@ class ServerSession {
         #>
 
         $this.Id = (SHA512FromString -String (-join ((33..126) | Get-Random -Count 128 | ForEach-Object{[char] $_})))
-        $this.TiedAddress = $RemoteAddress
+        $this.TiedAddress = $RemoteAddress        
     }
 
-    [bool] CompareWith([string] $Id, [string] $RemoteAddress)
-    {
+    [bool] CompareWith([string] $Id, [string] $RemoteAddress) {
         return ($this.Id -eq $Id) -and ($this.TiedAddress -eq $RemoteAddress)
     }
 }
@@ -776,6 +768,15 @@ class ClientIO {
         Write-Verbose "Sending Session Information with Local System Information..."
 
         $this.Writer.WriteLine(($sessionInformation | ConvertTo-Json -Compress))
+
+        if ($sessionInformation.Screens.Length -gt 1)
+        {
+            Write-Verbose "Current system have $($sessionInformation.Screens.Length) Screens. Waiting for Remote Viewer to choose which screen to capture."
+
+            $screenName = $this.Reader.ReadLine()
+
+            $session.Screen = $screenName            
+        }
 
         Write-Verbose "Handshake done."
 
@@ -1043,24 +1044,28 @@ $global:DesktopStreamScriptBlock = {
             .SYNOPSIS
                 Return a snapshot of primary screen desktop.
 
-            .DESCRIPTION
-                Notice:
-                    At this time, PowerRemoteDesktop only supports PrimaryScreen.
-                    Even if multi-screen capture is a very easy feature to implement, It will probably be present
-                    in final version 1.0
+            .PARAMETER Screen
+                Define target screen to capture (if multiple monitor exists).
+                Default is primary screen
         #>
+        param (
+            [System.Windows.Forms.Screen] $Screen = $null
+        )
         try 
         {	
-            $primaryDesktop = [System.Windows.Forms.Screen]::PrimaryScreen
+            if (-not $Screen)
+            {
+                $Screen = [System.Windows.Forms.Screen]::PrimaryScreen
+            }            
 
             $size = New-Object System.Drawing.Size(
-                $primaryDesktop.Bounds.Size.Width,
-                $primaryDesktop.Bounds.Size.Height
+                $Screen.Bounds.Size.Width,
+                $Screen.Bounds.Size.Height
             )
 
             $location = New-Object System.Drawing.Point(
-                $primaryDesktop.Bounds.Location.X,
-                $primaryDesktop.Bounds.Location.Y
+                $Screen.Bounds.Location.X,
+                $Screen.Bounds.Location.Y
             )
 
             $bitmap = New-Object System.Drawing.Bitmap($size.Width, $size.Height)
@@ -1087,6 +1092,10 @@ $global:DesktopStreamScriptBlock = {
     } 
 
     $imageQuality = 100
+    if ($syncHash.Param.ImageQuality -ge 0 -and $syncHash.Param.ImageQuality -lt 100)
+    {
+        $imageQuality = $syncHash.Param.ImageQuality
+    }
     try
     {
         [System.IO.MemoryStream] $oldImageStream = New-Object System.IO.MemoryStream
@@ -1102,7 +1111,7 @@ $global:DesktopStreamScriptBlock = {
         {           
             try
             {                                                           
-                $desktopImage = Get-DesktopImage                                                                    
+                $desktopImage = Get-DesktopImage -Screen $syncHash.Param.Screen                                                                   
 
                 $imageStream = New-Object System.IO.MemoryStream
 
@@ -1509,6 +1518,11 @@ function Invoke-RemoteDesktopServer
 
         .PARAMETER DisableVerbosity
             Disable verbosity (not recommended)
+
+        .PARAMETER ImageQuality
+            JPEG Compression level from 0 to 100
+                0 = Lowest quality.
+                100 = Highest quality.
     #>
 
     param (
@@ -1523,7 +1537,9 @@ function Invoke-RemoteDesktopServer
         [TransportMode] $TransportMode = "Raw",
         [switch] $TLSv1_3,
         
-        [switch] $DisableVerbosity
+        [switch] $DisableVerbosity,
+
+        [int] $ImageQuality = 100
     )
 
 
@@ -1546,10 +1562,7 @@ function Invoke-RemoteDesktopServer
 
         Write-Banner    
 
-        if (Get-ResolutionScaleFactor -ne 1)
-        {
-            [W.User32]::SetProcessDPIAware()
-        }    
+        [W.User32]::SetProcessDPIAware() | Out-Null
 
         if (-not (Test-Administrator) -and -not $CertificateFile -and -not $EncodedCertificate)
         {
@@ -1572,8 +1585,8 @@ function Invoke-RemoteDesktopServer
         if (-not $Password)
         {
             $Password = (
-                # a-Z, 0-9, !@#$%^&*_
-                -join ((48..57) + (64..90) + (35..38) + 33 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
+                # a-Z, 0-9, !@#%^&*_
+                -join ((48..57) + (64..90) + 35 + (37..38) + 33 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
             )
             
             Write-Host -NoNewLine "Server password: """
@@ -1586,7 +1599,7 @@ function Invoke-RemoteDesktopServer
             {
                 throw "Password complexity is too weak. Please choose a password following following rules:`r`n`
                 * Minimum 12 Characters`r`n`
-                * One of following symbols: ""!@#$%^&*_""`r`n`
+                * One of following symbols: ""!@#%^&*_""`r`n`
                 * At least of lower case character`r`n`
                 * At least of upper case character`r`n"
             }
@@ -1635,11 +1648,16 @@ function Invoke-RemoteDesktopServer
                 # Remote Viewer will then need to establish a new session from scratch.
                 $clientControl = $server.PullClient(10 * 1000);           
 
+                # Grab desired screen to capture
+                $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { $_.DeviceName -eq $server.Session.Screen }
+
                 # Create Runspace #1 for Desktop Streaming.
                 $param = New-Object -TypeName PSCustomObject -Property @{                      
                     Client = $clientDesktop                
+                    Screen = $screen
+                    ImageQuality = $ImageQuality
                 }
-
+                
                 $newRunspace = (New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                
                 $runspaces.Add($newRunspace)
 

@@ -50,10 +50,9 @@
 -------------------------------------------------------------------------------#>
 
 Add-Type -Assembly System.Windows.Forms
-Add-Type -MemberDefinition '[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);' -Name GDI32 -Namespace W;
-Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern int GetDC(IntPtr hWnd);[DllImport("User32.dll")] public static extern int ReleaseDC(IntPtr hwnd, int hdc);[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
+Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.beta.3"
+$global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
 
 function Write-Banner 
 {
@@ -81,24 +80,6 @@ function Write-Banner
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
 }
-
-function Get-ResolutionScaleFactor    
-{
-    <#
-        .SYNOPSIS
-            Return current screen scale factor
-    #>
-
-    $hdc = [W.User32]::GetDC(0)
-    try
-    {
-        return [W.GDI32]::GetDeviceCaps($hdc, 117) / [W.GDI32]::GetDeviceCaps($hdc, 10)
-    }
-    finally
-    {
-        [W.User32]::ReleaseDC(0, $hdc) | Out-Null
-    }        
-}   
 
 function Get-SHA512FromString
 {
@@ -518,13 +499,13 @@ class ClientIO {
 
         $sessionInformation = $jsonObject | ConvertFrom-Json
         if (
-            (-not ($sessionInformation.PSobject.Properties.name -match "MachineName")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "Username")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "WindowsVersion")) -or                      
-            (-not ($sessionInformation.PSobject.Properties.name -match "SessionId")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "TransportMode")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "Version")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -match "ScreenInformation"))
+            (-not ($sessionInformation.PSobject.Properties.name -contains "MachineName")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -contains "Username")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -contains "WindowsVersion")) -or                      
+            (-not ($sessionInformation.PSobject.Properties.name -contains "SessionId")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -contains "TransportMode")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -contains "Version")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -contains "Screens"))
         )
         {
             throw "Invalid session information data."
@@ -537,6 +518,81 @@ class ClientIO {
             Remote: ""$($sessionInformation.Version)""`r`n`
             You cannot use two different version between Viewer and Server."
         }
+
+        # Check if remote server have multiple screens
+        $selectedScreen = $null
+
+        if ($sessionInformation.Screens.Length -gt 1)
+        {
+            Write-Verbose "Remote Server have $($sessionInformation.Screens.Length) Screens."
+
+            Write-Host "Remote Server have " -NoNewLine
+            Write-Host $($sessionInformation.Screens.Length) -NoNewLine -ForegroundColor Green
+            Write-Host " Screens:`r`n"
+
+            foreach ($screen in $sessionInformation.Screens)
+            {
+                Write-Host $screen.Id -NoNewLine -ForegroundColor Cyan
+                Write-Host " - $($screen.Name)" -NoNewLine
+
+                if ($screen.Primary)
+                {
+                    Write-Host " (" -NoNewLine
+                    Write-Host "Primary" -NoNewLine -ForegroundColor Cyan
+                    Write-Host ")" -NoNewLine
+                }
+
+                Write-Host ""
+            }                                    
+
+            while ($true)
+            {
+                $choice = Read-Host "`r`nPlease choose which screen index to capture (Default: Primary)"
+
+                if (-not $choice)
+                {
+                    # Select-Object -First 1 should also grab the Primary Screen (Since it is ordered).
+                    $selectedScreen = $sessionInformation.Screens | Where-Object -FilterScript { $_.Primary -eq $true }
+                }
+                else 
+                {
+                    if (-not $choice -is [int]) {
+                        Write-Host "You must enter a valid index (integer), starting at 1."
+
+                        continue
+                    }                    
+
+                    $selectedScreen = $sessionInformation.Screens | Where-Object -FilterScript { $_.Id -eq $choice }
+
+                    if (-not $selectedScreen)
+                    {
+                        Write-Host "Invalid choice, please choose an existing screen index." -ForegroundColor Red
+                    }
+                }
+
+                if ($selectedScreen)
+                {
+                    $this.Writer.WriteLine($selectedScreen.Name)
+
+                    break
+                }
+            }            
+        }
+        else
+        {
+            $selectedScreen = $sessionInformation.Screens | Select-Object -First 1
+        }
+
+        if (-not $selectedScreen)
+        {
+            throw "No screen to capture."
+        }
+
+        Write-Verbose "@SelectedScreen:"
+        Write-Verbose $selectedScreen
+        Write-Verbose "---"        
+
+        $sessionInformation | Add-Member -MemberType NoteProperty -Name "Screen" -Value $selectedScreen
 
         return $sessionInformation
     }
@@ -655,6 +711,11 @@ class ViewerSession
             $this.ClientDesktop.Authentify($this.Password)
 
             $this.SessionInformation = $this.ClientDesktop.Hello()
+
+            if (-not $this.SessionInformation)
+            {
+                throw "Session cannot be null."
+            }
 
             Write-Verbose "Open secondary tunnel for input control..."
 
@@ -881,10 +942,7 @@ function Invoke-RemoteDesktopViewer
 
         Write-Banner 
 
-        if (Get-ResolutionScaleFactor -ne 1)
-        {
-            [W.User32]::SetProcessDPIAware()
-        }
+        [W.User32]::SetProcessDPIAware() | Out-Null
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
         
@@ -915,8 +973,8 @@ function Invoke-RemoteDesktopViewer
             $localScreenHeight -= $captionHeight
 
             $requireResize = (
-                ($localScreenWidth -le $session.SessionInformation.ScreenInformation.Width) -or
-                ($localScreenHeight -le $session.SessionInformation.ScreenInformation.Height)            
+                ($localScreenWidth -le $session.SessionInformation.Screen.Width) -or
+                ($localScreenHeight -le $session.SessionInformation.Screen.Height)            
             )
 
             $virtualDesktopWidth = 0
@@ -932,23 +990,23 @@ function Invoke-RemoteDesktopViewer
                 {
                     $virtualDesktopWidth = [math]::Round(($localScreenWidth * $resizeRatio) / 100)
                     
-                    $remoteResizedRatio = [math]::Round(($virtualDesktopWidth * 100) / $session.SessionInformation.ScreenInformation.Width)
+                    $remoteResizedRatio = [math]::Round(($virtualDesktopWidth * 100) / $session.SessionInformation.Screen.Width)
 
-                    $virtualDesktopHeight = [math]::Round(($session.SessionInformation.ScreenInformation.Height * $remoteResizedRatio) / 100)
+                    $virtualDesktopHeight = [math]::Round(($session.SessionInformation.Screen.Height * $remoteResizedRatio) / 100)
                 }
                 else
                 {
                     $virtualDesktopHeight = [math]::Round(($localScreenHeight * $resizeRatio) / 100)
                     
-                    $remoteResizedRatio = [math]::Round(($virtualDesktopHeight * 100) / $session.SessionInformation.ScreenInformation.Height)
+                    $remoteResizedRatio = [math]::Round(($virtualDesktopHeight * 100) / $session.SessionInformation.Screen.Height)
 
-                    $virtualDesktopWidth = [math]::Round(($session.SessionInformation.ScreenInformation.Width * $remoteResizedRatio) / 100)
+                    $virtualDesktopWidth = [math]::Round(($session.SessionInformation.Screen.Width * $remoteResizedRatio) / 100)
                 }                        
             }
             else
             {            
-                $virtualDesktopWidth = $session.SessionInformation.ScreenInformation.Width
-                $virtualDesktopHeight = $session.SessionInformation.ScreenInformation.Height
+                $virtualDesktopWidth = $session.SessionInformation.Screen.Width
+                $virtualDesktopHeight = $session.SessionInformation.Screen.Height
             }
 
             # Size Virtual Desktop Form Window
@@ -1088,8 +1146,8 @@ function Invoke-RemoteDesktopViewer
                         $Y = ($Y * 100) / $resizeRatio
                     }
       
-                    $X += $session.SessionInformation.ScreenInformation.X
-                    $Y += $session.SessionInformation.ScreenInformation.Y
+                    $X += $session.SessionInformation.Screen.X
+                    $Y += $session.SessionInformation.Screen.Y
 
                     $command = (New-MouseCommand -X $X -Y $Y -Button $Button -Type $Type)                    
 
