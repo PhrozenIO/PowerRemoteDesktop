@@ -54,7 +54,9 @@ Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool 
 
 $global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
 
-$global:CachedCertificatesFingerprints = @()
+# Local storage definitions
+$global:LocalStoragePath = "HKCU:\SOFTWARE\PowerRemoteDesktop_Viewer"
+$global:LocalStoragePath_TrustedServers = -join($global:LocalStoragePath, "\TrustedServers")
 
 function Write-Banner 
 {
@@ -81,6 +83,75 @@ function Write-Banner
     Write-Host "https://" -NoNewLine -ForegroundColor Green
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
+}
+
+function New-RegistryStorage
+{
+    <#
+        .SYNOPSIS
+            Create required registry keys for storing persistent data between viewer 
+            sessions.
+
+        .DESCRIPTION
+            Users doesn't share this storage. If you really wish to, replace HKCU by HKLM (Requires Admin Privilege)
+    #>
+
+    try
+    {
+        if (-not (Test-Path -Path $global:LocalStoragePath))
+        {
+            Write-Verbose "Create local storage root at ""${global:LocalStoragePath}""..."
+
+            New-Item -Path $global:LocalStoragePath
+        }
+
+        if (-not (Test-Path -Path $global:LocalStoragePath_TrustedServers))
+        {   
+            Write-Verbose "Create local storage child: ""${global:LocalStoragePath}""..."
+
+            New-Item -Path $global:LocalStoragePath_TrustedServers
+        }
+    }
+    catch
+    {
+        Write-Verbose "Could not write server fingerprint to local storage with error: ""$($_)"""
+    }
+}
+
+function Write-ServerFingerprintToLocalStorage
+{
+    <#
+        .SYNOPSIS
+            Write a trusted server certificate fingerprint to our local storage.
+
+        .PARAMETER Fingerprint
+            The server certificate fingerprint to store.
+    #>
+    param (
+        [Parameter(Mandatory=$True)]
+        [string] $Fingerprint
+    )
+
+    New-RegistryStorage
+
+    New-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint -PropertyType "String" -ErrorAction Ignore    
+}
+
+function Test-ServerFingerprintFromLocalStorage
+{
+    <#
+        .SYNOPSIS
+            Check if a server certificate fingerprint was saved to local storage.
+
+        .PARAMETER Fingerprint
+            The server certificate fingerprint to check.
+    #>
+    param (
+        [Parameter(Mandatory=$True)]
+        [string] $Fingerprint
+    )
+
+    return (Get-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint -ErrorAction Ignore)
 }
 
 function Get-SHA512FromString
@@ -399,7 +470,7 @@ class ClientIO {
                     $Policy
                 ) 
 
-                if ($global:CachedCertificatesFingerprints -contains $Certificate.Thumbprint)
+                if (Test-ServerFingerprintFromLocalStorage -Fingerprint $Certificate.Thumbprint)
                 {
                     Write-Verbose "Fingerprint already known and trusted: ""$($Certificate.Thumbprint)"""
 
@@ -420,8 +491,8 @@ class ClientIO {
                         $choice = Read-Host "`r`nDo you confirm the fingerprint is correct ? (Default: N)"
 
                         if ($choice -eq "Y" -or $choice -eq "Yes")
-                        {
-                            $global:CachedCertificatesFingerprints += $Certificate.Thumbprint
+                        {                                                    
+                            Write-ServerFingerprintToLocalStorage -Fingerprint $Certificate.Thumbprint
 
                             return $true                        
                         }
