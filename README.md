@@ -240,11 +240,14 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 * Possibility to change desktop image quality.
 * Possibility to choose which screen to capture if multiple screens (Monitors) are present on remote machine.
 
+### XX XX 2022 (1.0.4 Beta 5)
+
+* Password is stored as SecureString on Viewer. I don't see the point of implementing SecureString sever-side, if you do see the point, please change my mind.
+
 ![Multi Screen Example](Assets/multi-screen.png)
 
 ### List of ideas and TODO
 
-* 🟢 Do a deep investigation about SecureString and if it applies to current project (to protect password)                    
 * 🟢 Support Password Protected external Certificates.
 * 🟢 Server Fingerprint Authentication.
 * 🟢 Mutual Authentication for SSL/TLS (Client Certificate).        
