@@ -54,6 +54,8 @@ Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool 
 
 $global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
 
+$global:CachedCertificatesFingerprints = @()
+
 function Write-Banner 
 {
     <#
@@ -390,15 +392,48 @@ class ClientIO {
             $this.Client.GetStream(),
             $false,
             {
-                    param(
-                        $Sendr,
-                        $Certificate,
-                        $Chain,
-                        $Policy
+                param(
+                    $Sendr,
+                    $Certificate,
+                    $Chain,
+                    $Policy
                 ) 
 
-                # TODO: Certificate Validation
-                return $true
+                if ($global:CachedCertificatesFingerprints -contains $Certificate.Thumbprint)
+                {
+                    Write-Verbose "Fingerprint already known and trusted: ""$($Certificate.Thumbprint)"""
+
+                    return $true
+                }
+                else
+                {
+                    Write-Verbose "@Remote Server Certificate:"            
+                    Write-Verbose $Certificate
+                    Write-Verbose "---"                
+
+                    Write-Host "Server Certificate Fingerprint: """ -NoNewLine
+                    Write-Host $Certificate.Thumbprint -NoNewline -ForegroundColor Green
+                    Write-Host """"
+
+                    while ($true)
+                    {
+                        $choice = Read-Host "`r`nDo you confirm the fingerprint is correct ? (Default: N)"
+
+                        if ($choice -eq "Y" -or $choice -eq "Yes")
+                        {
+                            $global:CachedCertificatesFingerprints += $Certificate.Thumbprint
+
+                            return $true                        
+                        }
+                        elseif ($choice -eq "N" -or $choice -eq "No" -or -not $choice)
+                        {
+                            return $false
+                        }
+                        else {
+                            Write-Host "Invalid answer, please enter ""Y"" / ""Yes"" or ""N"" / ""No""" -ForegroundColor Red
+                        }
+                    }                
+                }
             }
         )              
 
@@ -920,7 +955,7 @@ function Invoke-RemoteDesktopViewer
             Recommended if possible.
 
         .PARAMETER DisableVerbosity
-            Disable verbosity (not recommended)
+            Disable verbosity (not recommended)        
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
