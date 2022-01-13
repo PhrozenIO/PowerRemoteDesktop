@@ -109,7 +109,7 @@ function Resolve-AuthenticationChallenge
         .SYNOPSIS
             Algorithm to solve the server challenge during password authentication.
 
-        .PARAMETER Password
+        .PARAMETER SecurePassword
             Registered password string for server authentication.
 
         .PARAMETER Candidate
@@ -117,24 +117,32 @@ function Resolve-AuthenticationChallenge
             Each time a new connection is requested to server, a new candidate is generated.
 
         .EXAMPLE
-            Resolve-AuthenticationChallenge -Password "s3cr3t!" -Candidate "rKcjdh154@]=Ldc"
+            Resolve-AuthenticationChallenge -SecurePassword "s3cr3t!" -Candidate "rKcjdh154@]=Ldc"
     #>
     param (        
        [Parameter(Mandatory=$True)]
-       [string] $Password, 
+       [SecureString] $SecurePassword, 
 
        [Parameter(Mandatory=$True)]
        [string] $Candidate
     )
 
-    $solution = -join($Candidate, ":", $Password)
-
-    for ([int] $i = 0; $i -le 1000; $i++)
+    $BSTR = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword)
+    try
     {
-        $solution = Get-SHA512FromString -String $solution
-    }
+        $solution = -join($Candidate, ":", [Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR))
 
-    return $solution
+        for ([int] $i = 0; $i -le 1000; $i++)
+        {
+            $solution = Get-SHA512FromString -String $solution
+        }
+
+        return $solution
+    }
+    finally
+    {
+        [Runtime.InteropServices.Marshal]::FreeBSTR($BSTR)
+    }
 }
 
 $global:VirtualDesktopUpdaterScriptBlock = {   
@@ -414,7 +422,7 @@ class ClientIO {
         Write-Verbose "Encrypted tunnel opened and ready for use."               
     }
 
-    [void]Authentify([string] $Password) {
+    [void]Authentify([SecureString] $SecurePassword) {
         <#
             .SYNOPSIS
                 Handle authentication process with remote server.
@@ -430,7 +438,7 @@ class ClientIO {
 
         $candidate = $this.Reader.ReadLine()                        
 
-        $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
+        $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -SecurePassword $SecurePassword   
 
         Write-Verbose "@Challenge:"
         Write-Verbose "Candidate: ""${candidate}"""
@@ -637,7 +645,7 @@ class ViewerSession
     [PSCustomObject] $SessionInformation = $null
     [string] $ServerAddress = "127.0.0.1"
     [string] $ServerPort = 2801
-    [string] $Password = ""
+    [SecureString] $SecurePassword = $null
     [bool] $TLSv1_3 = $false        
 
     [ClientIO] $ClientDesktop = $null
@@ -646,7 +654,7 @@ class ViewerSession
     ViewerSession(        
         [string] $ServerAddress,
         [int] $ServerPort,
-        [string] $Password,
+        [SecureString] $SecurePassword,
         [bool] $TLSv1_3
     )    
     {
@@ -664,7 +672,7 @@ class ViewerSession
             .PARAMETER ServerPort
                 Remote Server Port.
 
-            .PARAMETER Password
+            .PARAMETER SecureString
                 Password used during server authentication.
 
             .PARAMETER TLSv1_3
@@ -682,7 +690,7 @@ class ViewerSession
 
         $this.ServerAddress = $ServerAddress
         $this.ServerPort = $ServerPort 
-        $this.Password = $Password
+        $this.SecurePassword = $SecurePassword
         $this.TLSv1_3 = $TLSv1_3           
     }
 
@@ -708,7 +716,7 @@ class ViewerSession
         {
             $this.ClientDesktop.Connect()        
 
-            $this.ClientDesktop.Authentify($this.Password)
+            $this.ClientDesktop.Authentify($this.SecurePassword)
 
             $this.SessionInformation = $this.ClientDesktop.Hello()
 
@@ -722,7 +730,7 @@ class ViewerSession
             $this.ClientControl = [ClientIO]::new($this.ServerAddress, $this.ServerPort, $this.TLSv1_3) 
             $this.ClientControl.Connect()    
             
-            $this.ClientControl.Authentify($this.Password)
+            $this.ClientControl.Authentify($this.SecurePassword)
 
             $this.ClientControl.Hello($this.SessionInformation.SessionId)
 
@@ -896,8 +904,16 @@ function Invoke-RemoteDesktopViewer
             This option is generally set to true during development when connecting to local machine to avoid funny
             things.
 
+        .PARAMETER SecurePassword
+            SecureString Password object used to authenticate with remote server (Recommended)
+
+            Call "ConvertTo-SecureString –String "YouPasswordHere" -AsPlainText -Force" on this parameter to convert
+            a plain-text String to SecureString.
+
+            See example section.
+
         .PARAMETER Password
-            Password used during server authentication.
+            Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead)        
 
         .PARAMETER TLSv1_3
             Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
@@ -907,6 +923,7 @@ function Invoke-RemoteDesktopViewer
             Disable verbosity (not recommended)
 
         .EXAMPLE
+            Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
             Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort "2801" -Password "Just4TestingLocally!"
 
@@ -916,9 +933,9 @@ function Invoke-RemoteDesktopViewer
         [int] $ServerPort = 2801,
         [switch] $DisableInputControl,
         [switch] $TLSv1_3,
-            
-        [Parameter(Mandatory=$true)]
-        [string] $Password,
+                           
+        [SecureString] $SecurePassword,
+        [String] $Password,                
 
         [switch] $DisableVerbosity
     )
@@ -945,8 +962,20 @@ function Invoke-RemoteDesktopViewer
         [W.User32]::SetProcessDPIAware() | Out-Null
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
+
+        if (-not $SecurePassword -and -not $Password)
+        {
+            throw "You must specify either a SecurePassword or Password parameter used during server authentication."
+        }
+
+        if ($Password -and -not $SecurePassword)
+        {
+            $SecurePassword = (ConvertTo-SecureString -String $Password -AsPlainText -Force)
+
+            Remove-Variable -Name "Password" -ErrorAction SilentlyContinue
+        }
         
-        $session = [ViewerSession]::New($ServerAddress, $ServerPort, $Password, $TLSv1_3)
+        $session = [ViewerSession]::New($ServerAddress, $ServerPort, $SecurePassword, $TLSv1_3)
         try
         {
             $session.OpenSession()
