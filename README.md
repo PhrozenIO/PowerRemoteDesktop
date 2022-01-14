@@ -268,7 +268,7 @@ Detail                           Fingerprint
 
 ![Multi Screen Example](Assets/multi-screen.png)
 
-### XX XX 2022 (1.0.4 Beta 5)
+### 14 January 2022 (1.0.4 Beta 5)
 
 * Password is stored as SecureString on Viewer. I don't see the point of implementing SecureString sever-side, if you do see the point, please change my mind.
 * Server Fingerprint Validation. 
