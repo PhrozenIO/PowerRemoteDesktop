@@ -53,7 +53,7 @@ Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
+$global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
 
 enum TransportMode {
     Raw = 1
