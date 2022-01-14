@@ -32,18 +32,19 @@
         Wait for final 1.0 version.
 
     .Disclaimer
-        We are doing our best to prepare the content of this app. However, PHROZEN SASU cannot
-        warranty the expressions and suggestions of the contents, as well as its accuracy.
-        In addition, to the extent permitted by the law, PHROZEN SASU shall not be responsible
-        for any losses and/or damages due to the usage of the information on our app.
+        We are doing our best to prepare the content of this app. However, PHROZEN SASU and / or
+        Jean-Pierre LESUEUR cannot warranty the expressions and suggestions of the contents,
+        as well as its accuracy. In addition, to the extent permitted by the law, 
+        PHROZEN SASU and / or Jean-Pierre LESUEUR shall not be responsible for any losses
+        and/or damages due to the usage of the information on our app.
 
         By using our app, you hereby consent to our disclaimer and agree to its terms.
 
         Any links contained in our app may lead to external sites are provided for
         convenience only. Any information or statements that appeared in these sites
-        or app are not sponsored, endorsed, or otherwise approved by PHROZEN SASU.
-        For these external sites, SubSeven Legacy cannot be held liable for the
-        availability of, or the content located on or through it.
+        or app are not sponsored, endorsed, or otherwise approved by PHROZEN SASU and / or
+        Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre LESUEUR
+        cannot be held liable for the availability of, or the content located on or through it.
         Plus, any losses or damages occurred from using these contents or the internet
         generally.
         
@@ -52,7 +53,14 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
+$global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
+
+# Last until PowerShell session is closed
+$global:EphemeralTrustedServers = @()
+
+# Local storage definitions
+$global:LocalStoragePath = "HKCU:\SOFTWARE\PowerRemoteDesktop_Viewer"
+$global:LocalStoragePath_TrustedServers = -join($global:LocalStoragePath, "\TrustedServers")
 
 function Write-Banner 
 {
@@ -79,6 +87,195 @@ function Write-Banner
     Write-Host "https://" -NoNewLine -ForegroundColor Green
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
+}
+
+function Get-BooleanAnswer
+{
+    <#
+        .SYNOPSIS
+            As user to make a boolean choice. Return True if Y and False if N.
+    #>
+    while ($true)
+    {
+        $choice = Read-Host "[Y] Yes  [N] No  (Default is ""N"")"
+        if (-not $choice)
+        {
+            $choice = "N"
+        }
+
+        switch ($choice)
+        {
+            "Y"
+            {
+                return $true
+            }
+
+            "N"
+            {
+                return $false
+            }
+
+            default
+            {
+                Write-Host "Invalid Answer, available options are ""Y , N""" -ForegroundColor Red
+            }
+        }
+    }    
+}
+
+function New-RegistryStorage
+{
+    <#
+        .SYNOPSIS
+            Create required registry keys for storing persistent data between viewer 
+            sessions.
+
+        .DESCRIPTION
+            Users doesn't share this storage. If you really wish to, replace HKCU by HKLM (Requires Admin Privilege)
+    #>
+
+    try
+    {
+        if (-not (Test-Path -Path $global:LocalStoragePath))
+        {
+            Write-Verbose "Create local storage root at ""${global:LocalStoragePath}""..."
+
+            New-Item -Path $global:LocalStoragePath
+        }
+
+        if (-not (Test-Path -Path $global:LocalStoragePath_TrustedServers))
+        {   
+            Write-Verbose "Create local storage child: ""${global:LocalStoragePath}""..."
+
+            New-Item -Path $global:LocalStoragePath_TrustedServers
+        }
+    }
+    catch
+    {
+        Write-Verbose "Could not write server fingerprint to local storage with error: ""$($_)"""
+    }
+}
+
+function Write-ServerFingerprintToLocalStorage
+{
+    <#
+        .SYNOPSIS
+            Write a trusted server certificate fingerprint to our local storage.
+
+        .PARAMETER Fingerprint
+            The server certificate fingerprint to store.
+    #>
+    param (
+        [Parameter(Mandatory=$True)]
+        [string] $Fingerprint
+    )
+
+    New-RegistryStorage
+
+    # Value is stored as a JSON Object to be easily upgraded and extended in future.
+    $value = New-Object -TypeName PSCustomObject -Property @{
+        FirstSeen = (Get-Date).ToString()
+    }
+
+    New-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint -PropertyType "String" -Value ($value | ConvertTo-Json -Compress)  -ErrorAction Ignore    
+}
+
+function Remove-TrustedServer
+{
+    <#
+        .SYNOPSIS
+            Remove trusted server from local storage.
+
+        .PARAMETER Fingerprint
+            Server certificate to remove from trusted server list.
+    #>
+    param (
+        [Parameter(Mandatory=$True)]
+        [string] $Fingerprint
+    )
+
+    if (-not (Test-ServerFingerprintFromLocalStorage -Fingerprint $Fingerprint))
+    {
+        throw "Could not find fingerprint on trusted server list."
+    }
+
+    Write-Host "You are about to permanently delete trusted server -> """ -NoNewline
+    Write-Host $Fingerprint -NoNewLine -ForegroundColor Green
+    Write-Host """"
+
+    Write-Host "Are you sure ?"
+
+    if (Get-BooleanAnswer)
+    {
+        Remove-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint
+
+        Write-Host "Server successfully untrusted."
+    }    
+}
+
+function Get-TrustedServers
+{
+    <#
+        .SYNOPSIS
+            Return a list of trusted servers fingerprints from local storage.
+    #>
+
+    $list = @()
+
+    Get-Item -Path $global:LocalStoragePath_TrustedServers -ErrorAction Ignore | Select-Object -ExpandProperty Property | ForEach-Object { 
+        try
+        {
+            $list += New-Object -TypeName PSCustomObject -Property @{
+                Fingerprint = $_
+                Detail = (Get-ItemPropertyValue -Path $global:LocalStoragePath_TrustedServers -Name $_) | ConvertFrom-Json
+            }
+        }
+        catch
+        { }        
+    }
+
+    return $list 
+}
+
+function Clear-TrustedServers
+{
+    <#
+        .SYNOPSIS
+            Remove all trusted servers from local storage.
+    #>
+
+    $trustedServers = Get-TrustedServers
+    if (@($trustedServers).Length -eq 0)
+    {
+        throw "No trusted servers so far."
+    }
+
+    Write-Host "You are about to permanently delete $(@(trustedServers).Length) trusted servers."
+    Write-Host "Are you sure ?"
+
+    if (Get-BooleanAnswer)
+    {
+        Remove-Item -Path $global:LocalStoragePath_TrustedServers -Force -Verbose
+
+        Write-Host "Servers successfully untrusted."
+    }
+}
+
+function Test-ServerFingerprintFromLocalStorage
+{
+    <#
+        .SYNOPSIS
+            Check if a server certificate fingerprint was saved to local storage.
+
+        .PARAMETER Fingerprint
+            The server certificate fingerprint to check.
+    #>
+    param (
+        [Parameter(Mandatory=$True)]
+        [string] $Fingerprint
+    )
+
+    return (Get-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint -ErrorAction Ignore)
 }
 
 function Get-SHA512FromString
@@ -109,7 +306,7 @@ function Resolve-AuthenticationChallenge
         .SYNOPSIS
             Algorithm to solve the server challenge during password authentication.
 
-        .PARAMETER Password
+        .PARAMETER SecurePassword
             Registered password string for server authentication.
 
         .PARAMETER Candidate
@@ -117,24 +314,32 @@ function Resolve-AuthenticationChallenge
             Each time a new connection is requested to server, a new candidate is generated.
 
         .EXAMPLE
-            Resolve-AuthenticationChallenge -Password "s3cr3t!" -Candidate "rKcjdh154@]=Ldc"
+            Resolve-AuthenticationChallenge -SecurePassword "s3cr3t!" -Candidate "rKcjdh154@]=Ldc"
     #>
     param (        
        [Parameter(Mandatory=$True)]
-       [string] $Password, 
+       [SecureString] $SecurePassword, 
 
        [Parameter(Mandatory=$True)]
        [string] $Candidate
     )
 
-    $solution = -join($Candidate, ":", $Password)
-
-    for ([int] $i = 0; $i -le 1000; $i++)
+    $BSTR = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword)
+    try
     {
-        $solution = Get-SHA512FromString -String $solution
-    }
+        $solution = -join($Candidate, ":", [Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR))
 
-    return $solution
+        for ([int] $i = 0; $i -le 1000; $i++)
+        {
+            $solution = Get-SHA512FromString -String $solution
+        }
+
+        return $solution
+    }
+    finally
+    {
+        [Runtime.InteropServices.Marshal]::FreeBSTR($BSTR)
+    }
 }
 
 $global:VirtualDesktopUpdaterScriptBlock = {   
@@ -382,15 +587,92 @@ class ClientIO {
             $this.Client.GetStream(),
             $false,
             {
-                    param(
-                        $Sendr,
-                        $Certificate,
-                        $Chain,
-                        $Policy
+                param(
+                    $Sendr,
+                    $Certificate,
+                    $Chain,
+                    $Policy
                 ) 
 
-                # TODO: Certificate Validation
-                return $true
+                if (
+                    (Test-ServerFingerprintFromLocalStorage -Fingerprint $Certificate.Thumbprint) -or
+                    $global:EphemeralTrustedServers -contains $Certificate.Thumbprint                
+                )
+                {
+                    Write-Verbose "Fingerprint already known and trusted: ""$($Certificate.Thumbprint)"""
+
+                    return $true
+                }
+                else
+                {
+                    Write-Verbose "@Remote Server Certificate:"            
+                    Write-Verbose $Certificate
+                    Write-Verbose "---"                
+
+                    Write-Host "Untrusted Server Certificate Fingerprint: """ -NoNewLine
+                    Write-Host $Certificate.Thumbprint -NoNewline -ForegroundColor Green
+                    Write-Host """"
+
+                    while ($true)
+                    {
+                        Write-Host "`r`nDo you want to trust current server ?"
+                        $choice = Read-Host "[A] Always  [Y] Yes  [N] No  [?] Help  (Default is ""N"")"
+                        if (-not $choice)
+                        {
+                            $choice = "N"
+                        }
+
+                        switch ($choice)
+                        {
+                            "?"
+                            {
+                                Write-Host ""
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "A" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Always trust current server (Persistent between PowerShell Instances)"
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "Y" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Trust current server during current PowerShell Instance lifetime (Temporary)."
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "N" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Don't trust current server. Connection is aborted (Recommeneded if you don't recognize server fingerprint)."
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "?" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Current help output."
+
+                                Write-Host ""
+                            }
+
+                            "A" 
+                            {
+                                Write-ServerFingerprintToLocalStorage -Fingerprint $Certificate.Thumbprint
+
+                                return $true
+                            }
+
+                            "Y"
+                            {
+                                $global:EphemeralTrustedServers += $Certificate.Thumbprint
+
+                                return $true
+                            }
+
+                            "N"
+                            {
+                                return $false
+                            }
+
+                            default
+                            {
+                                Write-Host "Invalid Answer, available options are ""A , Y , N , H""" -ForegroundColor Red
+                            }
+                        }
+                    }                
+                }
             }
         )              
 
@@ -414,7 +696,7 @@ class ClientIO {
         Write-Verbose "Encrypted tunnel opened and ready for use."               
     }
 
-    [void]Authentify([string] $Password) {
+    [void]Authentify([SecureString] $SecurePassword) {
         <#
             .SYNOPSIS
                 Handle authentication process with remote server.
@@ -430,7 +712,7 @@ class ClientIO {
 
         $candidate = $this.Reader.ReadLine()                        
 
-        $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
+        $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -SecurePassword $SecurePassword   
 
         Write-Verbose "@Challenge:"
         Write-Verbose "Candidate: ""${candidate}"""
@@ -637,7 +919,7 @@ class ViewerSession
     [PSCustomObject] $SessionInformation = $null
     [string] $ServerAddress = "127.0.0.1"
     [string] $ServerPort = 2801
-    [string] $Password = ""
+    [SecureString] $SecurePassword = $null
     [bool] $TLSv1_3 = $false        
 
     [ClientIO] $ClientDesktop = $null
@@ -646,7 +928,7 @@ class ViewerSession
     ViewerSession(        
         [string] $ServerAddress,
         [int] $ServerPort,
-        [string] $Password,
+        [SecureString] $SecurePassword,
         [bool] $TLSv1_3
     )    
     {
@@ -664,7 +946,7 @@ class ViewerSession
             .PARAMETER ServerPort
                 Remote Server Port.
 
-            .PARAMETER Password
+            .PARAMETER SecureString
                 Password used during server authentication.
 
             .PARAMETER TLSv1_3
@@ -682,7 +964,7 @@ class ViewerSession
 
         $this.ServerAddress = $ServerAddress
         $this.ServerPort = $ServerPort 
-        $this.Password = $Password
+        $this.SecurePassword = $SecurePassword
         $this.TLSv1_3 = $TLSv1_3           
     }
 
@@ -708,7 +990,7 @@ class ViewerSession
         {
             $this.ClientDesktop.Connect()        
 
-            $this.ClientDesktop.Authentify($this.Password)
+            $this.ClientDesktop.Authentify($this.SecurePassword)
 
             $this.SessionInformation = $this.ClientDesktop.Hello()
 
@@ -722,7 +1004,7 @@ class ViewerSession
             $this.ClientControl = [ClientIO]::new($this.ServerAddress, $this.ServerPort, $this.TLSv1_3) 
             $this.ClientControl.Connect()    
             
-            $this.ClientControl.Authentify($this.Password)
+            $this.ClientControl.Authentify($this.SecurePassword)
 
             $this.ClientControl.Hello($this.SessionInformation.SessionId)
 
@@ -896,17 +1178,26 @@ function Invoke-RemoteDesktopViewer
             This option is generally set to true during development when connecting to local machine to avoid funny
             things.
 
+        .PARAMETER SecurePassword
+            SecureString Password object used to authenticate with remote server (Recommended)
+
+            Call "ConvertTo-SecureString –String "YouPasswordHere" -AsPlainText -Force" on this parameter to convert
+            a plain-text String to SecureString.
+
+            See example section.
+
         .PARAMETER Password
-            Password used during server authentication.
+            Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead)        
 
         .PARAMETER TLSv1_3
             Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
             Recommended if possible.
 
         .PARAMETER DisableVerbosity
-            Disable verbosity (not recommended)
+            Disable verbosity (not recommended)        
 
         .EXAMPLE
+            Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
             Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort "2801" -Password "Just4TestingLocally!"
 
@@ -916,9 +1207,9 @@ function Invoke-RemoteDesktopViewer
         [int] $ServerPort = 2801,
         [switch] $DisableInputControl,
         [switch] $TLSv1_3,
-            
-        [Parameter(Mandatory=$true)]
-        [string] $Password,
+                           
+        [SecureString] $SecurePassword,
+        [String] $Password,                
 
         [switch] $DisableVerbosity
     )
@@ -945,8 +1236,20 @@ function Invoke-RemoteDesktopViewer
         [W.User32]::SetProcessDPIAware() | Out-Null
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
+
+        if (-not $SecurePassword -and -not $Password)
+        {
+            throw "You must specify either a SecurePassword or Password parameter used during server authentication."
+        }
+
+        if ($Password -and -not $SecurePassword)
+        {
+            $SecurePassword = (ConvertTo-SecureString -String $Password -AsPlainText -Force)
+
+            Remove-Variable -Name "Password" -ErrorAction SilentlyContinue
+        }
         
-        $session = [ViewerSession]::New($ServerAddress, $ServerPort, $Password, $TLSv1_3)
+        $session = [ViewerSession]::New($ServerAddress, $ServerPort, $SecurePassword, $TLSv1_3)
         try
         {
             $session.OpenSession()
@@ -1327,5 +1630,8 @@ function Invoke-RemoteDesktopViewer
 }
 
 try {  
+    Export-ModuleMember -Function Remove-TrustedServer
+    Export-ModuleMember -Function Clear-TrustedServers    
+    Export-ModuleMember -Function Get-TrustedServers
     Export-ModuleMember -Function Invoke-RemoteDesktopViewer
 } catch {}

@@ -219,6 +219,30 @@ First encode your certificate file as base64 string.
 
 Then pass the encoded string to parameter `EncodedCertificate`.
 
+### List trusted servers
+
+It is now possible to persistantly trust server using a local storage (Windows User Registry Hive)
+
+`Get-TrustedServers`
+
+Example output:
+
+````
+PS C:\Users\Phrozen\Desktop\Projects\PowerRemoteDesktop> Get-TrustedServers
+
+Detail                           Fingerprint
+------                           -----------
+@{FirstSeen=14/01/2022 11:06:16} EA88AADA402864D1864542F7F2A3C49E56F473B0
+````
+
+### Delete trusted server (Permanently)
+
+`Remove-TrustedServer`
+
+### Delete all trusted servers (Permanently)
+
+`Clear-TrustedServers`
+
 ## Changelog
 
 ### 11 January 2022 (1.0.1 Beta 2)
@@ -240,19 +264,28 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 * Possibility to change desktop image quality.
 * Possibility to choose which screen to capture if multiple screens (Monitors) are present on remote machine.
 
+#### Multi Screen Selection
+
 ![Multi Screen Example](Assets/multi-screen.png)
+
+### 14 January 2022 (1.0.4 Beta 5)
+
+* Password is stored as SecureString on Viewer. I don't see the point of implementing SecureString sever-side, if you do see the point, please change my mind.
+* Server Fingerprint Validation. 
+* Possibility to trust a server for current PowerShell Instance or persistantly using a local storage.
+* Possibility to manage trusted servers (List, Remove, Remove All)
+
+#### Fingerprint Validation
+
+![Server Fingerprint Validation](Assets/server-fingerprint-validation.png)
 
 ### List of ideas and TODO
 
-* 🟢 Do a deep investigation about SecureString and if it applies to current project (to protect password)                    
 * 🟢 Support Password Protected external Certificates.
-* 🟢 Server Fingerprint Authentication.
 * 🟢 Mutual Authentication for SSL/TLS (Client Certificate).        
 * 🟢 Synchronize Cursor State.                
 * 🟢 Synchronize Clipboard. 
 * 🟠 Keep-Alive system to implement Read / Write Timeout.
-* 🟠 Improve Virtual Keyboard.    
-* 🟠 Server Concurrency.
 * 🟠 Listen for local/remote screen resolution update event.
 * 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 
@@ -262,18 +295,18 @@ Then pass the encoded string to parameter `EncodedCertificate`.
 
 # Disclaimer
 
-We are doing our best to prepare the content of this app. However, PHROZEN SASU cannot
-warranty the expressions and suggestions of the contents, as well as its accuracy.
-In addition, to the extent permitted by the law, PHROZEN SASU shall not be responsible
-for any losses and/or damages due to the usage of the information on our app.
+We are doing our best to prepare the content of this app. However, PHROZEN SASU and / or
+Jean-Pierre LESUEUR cannot warranty the expressions and suggestions of the contents,
+as well as its accuracy. In addition, to the extent permitted by the law, 
+PHROZEN SASU and / or Jean-Pierre LESUEUR shall not be responsible for any losses
+and/or damages due to the usage of the information on our app.
 
 By using our app, you hereby consent to our disclaimer and agree to its terms.
 
 Any links contained in our app may lead to external sites are provided for
 convenience only. Any information or statements that appeared in these sites
-or app are not sponsored, endorsed, or otherwise approved by PHROZEN SASU.
-For these external sites, SubSeven Legacy cannot be held liable for the
-availability of, or the content located on or through it.
+or app are not sponsored, endorsed, or otherwise approved by PHROZEN SASU and / or
+Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre LESUEUR
+cannot be held liable for the availability of, or the content located on or through it.
 Plus, any losses or damages occurred from using these contents or the internet
 generally.
-
