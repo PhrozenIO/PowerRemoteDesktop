@@ -54,6 +54,9 @@ Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool 
 
 $global:PowerRemoteDesktopVersion = "1.0.3.beta.4"
 
+# Last until PowerShell session is closed
+$global:EphemeralTrustedServers = @()
+
 # Local storage definitions
 $global:LocalStoragePath = "HKCU:\SOFTWARE\PowerRemoteDesktop_Viewer"
 $global:LocalStoragePath_TrustedServers = -join($global:LocalStoragePath, "\TrustedServers")
@@ -83,6 +86,40 @@ function Write-Banner
     Write-Host "https://" -NoNewLine -ForegroundColor Green
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
+}
+
+function Get-BooleanAnswer
+{
+    <#
+        .SYNOPSIS
+            As user to make a boolean choice. Return True if Y and False if N.
+    #>
+    while ($true)
+    {
+        $choice = Read-Host "[Y] Yes  [N] No  (Default is ""N"")"
+        if (-not $choice)
+        {
+            $choice = "N"
+        }
+
+        switch ($choice)
+        {
+            "Y"
+            {
+                return $true
+            }
+
+            "N"
+            {
+                return $false
+            }
+
+            default
+            {
+                Write-Host "Invalid Answer, available options are ""Y , N""" -ForegroundColor Red
+            }
+        }
+    }    
 }
 
 function New-RegistryStorage
@@ -134,7 +171,93 @@ function Write-ServerFingerprintToLocalStorage
 
     New-RegistryStorage
 
-    New-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint -PropertyType "String" -ErrorAction Ignore    
+    # Value is stored as a JSON Object to be easily upgraded and extended in future.
+    $value = New-Object -TypeName PSCustomObject -Property @{
+        FirstSeen = (Get-Date).ToString()
+    }
+
+    New-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint -PropertyType "String" -Value ($value | ConvertTo-Json -Compress)  -ErrorAction Ignore    
+}
+
+function Remove-TrustedServer
+{
+    <#
+        .SYNOPSIS
+            Remove trusted server from local storage.
+
+        .PARAMETER Fingerprint
+            Server certificate to remove from trusted server list.
+    #>
+    param (
+        [Parameter(Mandatory=$True)]
+        [string] $Fingerprint
+    )
+
+    if (-not (Test-ServerFingerprintFromLocalStorage -Fingerprint $Fingerprint))
+    {
+        throw "Could not find fingerprint on trusted server list."
+    }
+
+    Write-Host "You are about to permanently delete trusted server -> """ -NoNewline
+    Write-Host $Fingerprint -NoNewLine -ForegroundColor Green
+    Write-Host """"
+
+    Write-Host "Are you sure ?"
+
+    if (Get-BooleanAnswer)
+    {
+        Remove-ItemProperty -Path $global:LocalStoragePath_TrustedServers -Name $Fingerprint
+
+        Write-Host "Server successfully untrusted."
+    }    
+}
+
+function Get-TrustedServers
+{
+    <#
+        .SYNOPSIS
+            Return a list of trusted servers fingerprints from local storage.
+    #>
+
+    $list = @()
+
+    Get-Item -Path $global:LocalStoragePath_TrustedServers -ErrorAction Ignore | Select-Object -ExpandProperty Property | ForEach-Object { 
+        try
+        {
+            $list += New-Object -TypeName PSCustomObject -Property @{
+                Fingerprint = $_
+                Detail = (Get-ItemPropertyValue -Path $global:LocalStoragePath_TrustedServers -Name $_) | ConvertFrom-Json
+            }
+        }
+        catch
+        { }        
+    }
+
+    return $list 
+}
+
+function Clear-TrustedServers
+{
+    <#
+        .SYNOPSIS
+            Remove all trusted servers from local storage.
+    #>
+
+    $trustedServers = Get-TrustedServers
+    if (@($trustedServers).Length -eq 0)
+    {
+        throw "No trusted servers so far."
+    }
+
+    Write-Host "You are about to permanently delete $(@(trustedServers).Length) trusted servers."
+    Write-Host "Are you sure ?"
+
+    if (Get-BooleanAnswer)
+    {
+        Remove-Item -Path $global:LocalStoragePath_TrustedServers -Force -Verbose
+
+        Write-Host "Servers successfully untrusted."
+    }
 }
 
 function Test-ServerFingerprintFromLocalStorage
@@ -470,7 +593,10 @@ class ClientIO {
                     $Policy
                 ) 
 
-                if (Test-ServerFingerprintFromLocalStorage -Fingerprint $Certificate.Thumbprint)
+                if (
+                    (Test-ServerFingerprintFromLocalStorage -Fingerprint $Certificate.Thumbprint) -or
+                    $global:EphemeralTrustedServers -contains $Certificate.Thumbprint                
+                )
                 {
                     Write-Verbose "Fingerprint already known and trusted: ""$($Certificate.Thumbprint)"""
 
@@ -482,26 +608,67 @@ class ClientIO {
                     Write-Verbose $Certificate
                     Write-Verbose "---"                
 
-                    Write-Host "Server Certificate Fingerprint: """ -NoNewLine
+                    Write-Host "Untrusted Server Certificate Fingerprint: """ -NoNewLine
                     Write-Host $Certificate.Thumbprint -NoNewline -ForegroundColor Green
                     Write-Host """"
 
                     while ($true)
                     {
-                        $choice = Read-Host "`r`nDo you confirm the fingerprint is correct ? (Default: N)"
-
-                        if ($choice -eq "Y" -or $choice -eq "Yes")
-                        {                                                    
-                            Write-ServerFingerprintToLocalStorage -Fingerprint $Certificate.Thumbprint
-
-                            return $true                        
-                        }
-                        elseif ($choice -eq "N" -or $choice -eq "No" -or -not $choice)
+                        Write-Host "`r`nDo you want to trust current server ?"
+                        $choice = Read-Host "[A] Always  [Y] Yes  [N] No  [?] Help  (Default is ""N"")"
+                        if (-not $choice)
                         {
-                            return $false
+                            $choice = "N"
                         }
-                        else {
-                            Write-Host "Invalid answer, please enter ""Y"" / ""Yes"" or ""N"" / ""No""" -ForegroundColor Red
+
+                        switch ($choice)
+                        {
+                            "?"
+                            {
+                                Write-Host ""
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "A" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Always trust current server (Persistent between PowerShell Instances)"
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "Y" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Trust current server during current PowerShell Instance lifetime (Temporary)."
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "N" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Don't trust current server. Connection is aborted (Recommeneded if you don't recognize server fingerprint)."
+
+                                Write-Host "[" -NoNewLine
+                                Write-Host "?" -NoNewLine -ForegroundColor Cyan
+                                Write-Host "] Current help output."
+
+                                Write-Host ""
+                            }
+
+                            "A" 
+                            {
+                                Write-ServerFingerprintToLocalStorage -Fingerprint $Certificate.Thumbprint
+
+                                return $true
+                            }
+
+                            "Y"
+                            {
+                                $global:EphemeralTrustedServers += $Certificate.Thumbprint
+
+                                return $true
+                            }
+
+                            "N"
+                            {
+                                return $false
+                            }
+
+                            default
+                            {
+                                Write-Host "Invalid Answer, available options are ""A , Y , N , H""" -ForegroundColor Red
+                            }
                         }
                     }                
                 }
@@ -1462,5 +1629,8 @@ function Invoke-RemoteDesktopViewer
 }
 
 try {  
+    Export-ModuleMember -Function Remove-TrustedServer
+    Export-ModuleMember -Function Clear-TrustedServers    
+    Export-ModuleMember -Function Get-TrustedServers
     Export-ModuleMember -Function Invoke-RemoteDesktopViewer
 } catch {}
