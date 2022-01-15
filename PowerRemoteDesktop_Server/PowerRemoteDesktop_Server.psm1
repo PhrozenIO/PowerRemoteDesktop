@@ -1164,7 +1164,7 @@ $global:DesktopStreamScriptBlock = {
                                     }                                                    
 
                                     # (OPTIMIZATION IDEA): Try with BinaryStream to save the need of "byte[]"" buffer.
-                                    $imageStream.Read($buffer, 0, $buffer.Length) | Out-Null
+                                    $null = $imageStream.Read($buffer, 0, $buffer.Length)
 
                                     $syncHash.Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
 
@@ -1563,7 +1563,7 @@ function Invoke-RemoteDesktopServer
 
         Write-Banner    
 
-        [W.User32]::SetProcessDPIAware() | Out-Null
+        $null = [W.User32]::SetProcessDPIAware()
 
         if (-not (Test-Administrator) -and -not $CertificateFile -and -not $EncodedCertificate)
         {
@@ -1719,7 +1719,7 @@ function Invoke-RemoteDesktopServer
 
                 foreach ($runspace in $runspaces)
                 {
-                    $runspace.PowerShell.EndInvoke($runspace.AsyncResult) | Out-Null                    
+                    $null = $runspace.PowerShell.EndInvoke($runspace.AsyncResult)
                     $runspace.PowerShell.Runspace.Dispose()                                      
                     $runspace.PowerShell.Dispose()                    
                 }    
