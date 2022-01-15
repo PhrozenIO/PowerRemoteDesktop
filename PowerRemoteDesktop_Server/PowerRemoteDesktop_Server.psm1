@@ -114,6 +114,26 @@ function Test-PasswordComplexity
     return ($PasswordCandidate -match $complexityRules)
 }
 
+function New-RandomPassword
+{    
+    <#
+        .SYNOPSIS
+            Generate a new secure password.
+
+        .DESCRIPTION
+            Generate new password candidates until one candidate match complexity rules.
+            Generally only one iteration is enough but in some rare case it could be one or two more.
+            TODO: Better algorythm to avoid loop ?
+    #>
+    do
+    {
+        $candidate = -join ((48..57) + (64..90) + (37..38) + 33 + 35 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
+
+    } until (Test-PasswordComplexity -PasswordCandidate $candidate)
+
+    return $candidate
+}
+
 function New-DefaultX509Certificate
 {    
     <#
@@ -1585,10 +1605,7 @@ function Invoke-RemoteDesktopServer
 
         if (-not $Password)
         {
-            $Password = (
-                # a-Z, 0-9, !@#%^&*_
-                -join ((48..57) + (64..90) + 35 + (37..38) + 33 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
-            )
+            $Password = New-RandomPassword
             
             Write-Host -NoNewLine "Server password: """
             Write-Host -NoNewLine ${Password} -ForegroundColor green
