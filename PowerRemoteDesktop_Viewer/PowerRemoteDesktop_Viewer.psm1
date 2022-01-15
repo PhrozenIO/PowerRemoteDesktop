@@ -1496,7 +1496,8 @@ function Invoke-RemoteDesktopViewer
                                 ")" { $result = "{)}" }
                                 "[" { $result = "{[}" }
                                 "]" { $result = "{]}" }
-                                Default { $result = $_ }
+
+                                default { $result = $_ }
                             }
 
                             Send-VirtualKeyboard -KeyChain $result                   
