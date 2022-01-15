@@ -1484,24 +1484,25 @@ function Invoke-RemoteDesktopViewer
                     { 
                         if ($_.KeyChar)
                         {
-                            $String = [string]$_.KeyChar
+                            switch -CaseSensitive ([string]$_.KeyChar)
+                            {
+                                "{" { $result = "{{}" }
+                                "}" { $result = "{}}" }
+                                "+" { $result = "{+}" }
+                                "^" { $result = "{^}" }
+                                "%" { $result = "{%}" }
+                                "~" { $result = "{~}" }
+                                "(" { $result = "{(}" }
+                                ")" { $result = "{)}" }
+                                "[" { $result = "{[}" }
+                                "]" { $result = "{]}" }
+                                Default { $result = $_ }
+                            }
 
-                            $String = $String.Replace("{", "{{}")
-                            $String = $String.Replace("}", "{}}")
-
-                            $String = $String.Replace("+", "{+}")
-                            $String = $String.Replace("^", "{^}")
-                            $String = $String.Replace("%", "{%}")
-                            $String = $String.Replace("~", "{%}")
-                            $String = $String.Replace("(", "{()}")
-                            $String = $String.Replace(")", "{)}")
-                            $String = $String.Replace("[", "{[]}")
-                            $String = $String.Replace("]", "{]}")    
-
-                            Send-VirtualKeyboard -KeyChain $String                   
-                        }                        
+                            Send-VirtualKeyboard -KeyChain $result                   
+                        }
                     }
-                )       
+                )
 
                 $virtualDesktopForm.Form.Add_KeyDown(
                     {                       
