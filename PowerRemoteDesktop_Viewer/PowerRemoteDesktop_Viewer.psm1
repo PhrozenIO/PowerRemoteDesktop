@@ -473,7 +473,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                             $syncHash.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
 
-                            $stream.Write($buffer, 0, $buffer.Length) | Out-Null
+                            $null = $stream.Write($buffer, 0, $buffer.Length)
 
                             $totalBytesRead += $bufferSize
                         } until ($totalBytesRead -eq $totalBufferSize)
@@ -1233,7 +1233,7 @@ function Invoke-RemoteDesktopViewer
 
         Write-Banner 
 
-        [W.User32]::SetProcessDPIAware() | Out-Null
+        $null = [W.User32]::SetProcessDPIAware()
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
 
@@ -1596,7 +1596,7 @@ function Invoke-RemoteDesktopViewer
 
             Write-Verbose "Done. Showing Virtual Desktop Form."                       
 
-            $virtualDesktopForm.Form.ShowDialog() | Out-Null                         
+            $null = $virtualDesktopForm.Form.ShowDialog()
         }
         finally
         {    
@@ -1611,7 +1611,7 @@ function Invoke-RemoteDesktopViewer
 
             if ($newRunspace) 
             {         
-                $newRunspace.PowerShell.EndInvoke($newRunspace.AsyncResult) | Out-Null                    
+                $null = $newRunspace.PowerShell.EndInvoke($newRunspace.AsyncResult)
                 $newRunspace.PowerShell.Runspace.Dispose()                                      
                 $newRunspace.PowerShell.Dispose()  
             } 
