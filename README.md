@@ -10,7 +10,7 @@
 
 It doesn't rely on any existing Remote Desktop Application or Protocol to function. A serious advantage of this application is its nature (PowerShell) and its ease of use and installation.
 
-This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows Terminal (cmd).
+This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows command-line interpreter (cmd).
 
 Tested on:
 
