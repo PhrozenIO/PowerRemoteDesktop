@@ -10,7 +10,7 @@
 
 It doesn't rely on any existing Remote Desktop Application or Protocol to function. A serious advantage of this application is its nature (PowerShell) and its ease of use and installation.
 
-This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows Terminal (cmd).
+This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows command-line interpreter (cmd).
 
 Tested on:
 
@@ -275,6 +275,13 @@ Detail                           Fingerprint
 * Possibility to trust a server for current PowerShell Instance or persistantly using a local storage.
 * Possibility to manage trusted servers (List, Remove, Remove All)
 
+### XX January 2022 (1.0.5 Beta 6)
+
+* Multiple code improvements to support incoming / outgoing events.
+* Global cursor state synchronization implemented (Now virtual desktop mouse cursor is the same as remote server).
+* Password Generator algorithm fixed.
+* Virtual keyboard `]` and `)` correctly sent and interpreted.
+
 #### Fingerprint Validation
 
 ![Server Fingerprint Validation](Assets/server-fingerprint-validation.png)
@@ -282,10 +289,8 @@ Detail                           Fingerprint
 ### List of ideas and TODO
 
 * 🟢 Support Password Protected external Certificates.
-* 🟢 Mutual Authentication for SSL/TLS (Client Certificate).        
-* 🟢 Synchronize Cursor State.                
+* 🟢 Mutual Authentication for SSL/TLS (Client Certificate).                     
 * 🟢 Synchronize Clipboard. 
-* 🟠 Keep-Alive system to implement Read / Write Timeout.
 * 🟠 Listen for local/remote screen resolution update event.
 * 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 
