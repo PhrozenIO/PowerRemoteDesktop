@@ -132,7 +132,8 @@ function New-RandomPassword
     #>
     do
     {
-        $candidate = -join ((48..57) + (64..90) + (37..38) + 33 + 35 + 42 + 94 + 95 + (97..122) | Get-Random -Count 18 | ForEach-Object{[char] $_})
+        $authorizedChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#%^&*_"
+        $candidate = -join ((1..18) | ForEach-Object { Get-Random -Input $authorizedChars.ToCharArray() })
 
     } until (Test-PasswordComplexity -PasswordCandidate $candidate)
 
@@ -585,7 +586,7 @@ class ServerSession {
                 network.
         #>
 
-        $this.Id = (SHA512FromString -String (-join ((33..126) | Get-Random -Count 128 | ForEach-Object{[char] $_})))
+        $this.Id = (SHA512FromString -String (-join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})))
         $this.TiedAddress = $RemoteAddress        
     }
 
@@ -697,7 +698,7 @@ class ClientIO {
 
             Write-Verbose "New authentication challenge..."
 
-            $candidate = (-join ((33..126) | Get-Random -Count 128 | ForEach-Object{[char] $_}))
+            $candidate = -join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})
             $candidate = Get-SHA512FromString -String $candidate
 
             $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
