@@ -556,9 +556,10 @@ $global:IngressEventScriptBlock = {
 
     enum OutputCommand {
         KeepAlive = 0x1
-        MouseCursorUpdated = 0x2       
-    }
-    
+        MouseCursorUpdated = 0x2 
+        ClipboardUpdated = 0x3         
+    }    
+
     while ($true)                    
     {        
         try
@@ -613,9 +614,18 @@ $global:IngressEventScriptBlock = {
                 {
                     $Param.SyncHash.VirtualDesktop.Picture.Cursor = $cursor
                 }
-                catch {  }
+                catch 
+                {}
 
                 break
+            }
+
+            "ClipboardUpdated"
+            {
+                if (-not ($command.PSobject.Properties.name -match "Text"))
+                { continue } 
+                
+                Set-Clipboard -Value $command.Text
             }
         }
     }    

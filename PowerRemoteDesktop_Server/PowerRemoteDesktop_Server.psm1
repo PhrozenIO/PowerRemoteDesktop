@@ -1488,7 +1488,8 @@ $global:EgressEventScriptBlock = {
 
     enum OutputCommand {
         KeepAlive = 0x1
-        MouseCursorUpdated = 0x2       
+        MouseCursorUpdated = 0x2  
+        ClipboardUpdated = 0x3     
     }
 
     function Initialize-Cursors
@@ -1576,51 +1577,116 @@ $global:EgressEventScriptBlock = {
         }
     }
 
+    function Send-Event
+    {
+        <#
+            .SYNOPSIS
+                Send an event to remote peer.
+
+            .PARAMETER command
+                A supported command id representing the kind of event.
+
+            .PARAMETER data
+                An optional object containing additional information about the event. 
+        #>
+        param (            
+            [Parameter(Mandatory=$True)]
+            [OutputCommand] $Command,
+
+            [PSCustomObject] $Data = $null
+        )
+
+        try 
+        {
+            if (-not $Data)
+            {
+                $Data = New-Object -TypeName PSCustomObject -Property @{
+                    Id = $Command 
+                }
+            }
+            else
+            {
+                $Data | Add-Member -MemberType NoteProperty -Name "Id" -Value $Command
+            }            
+
+            $Param.Writer.WriteLine(($Data | ConvertTo-Json -Compress))  
+
+            return $true
+        }
+        catch 
+        { 
+            return $false
+        }
+    }
+
     $cursors = Initialize-Cursors
 
     $oldCursor = 0
+    $oldClipboard = Get-Clipboard
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     while ($true)
     {
-        # Keep-Alive (Detect Disconnected Socket)
+        # Events that occurs every seconds needs to be placed bellow.
+        # If no event has occured during this second we send a Keep-Alive signal to
+        # remote peer and detect a potential socket disconnection.
         if ($stopWatch.ElapsedMilliseconds -ge 1000)
         {
-            $command = New-Object -TypeName PSCustomObject -Property @{
-                Id = [OutputCommand]::KeepAlive                
-            } 
-
-            try 
+            try
             {
-                $Param.Writer.WriteLine(($command | ConvertTo-Json -Compress))  
-            }
-            catch 
-            { break }
+                $eventTriggered = $false
 
-            $stopWatch.Restart()
+                # IDEA: Check for existing clipboard change event or implement a custom clipboard
+                # change detector using "WM_CLIPBOARDUPDATE" for example.
+                # It is not very important but it would avoid calling "Get-Clipboard" every seconds.                
+                $currentClipboard = Get-Clipboard
+
+                if ($currentClipboard -and $currentClipboard -cne $oldClipboard)
+                {
+                    $HostSyncHash.Host.UI.WriteLine("1")
+                    $data = New-Object -TypeName PSCustomObject -Property @{                
+                        Text = $currentClipboard
+                    } 
+
+                    if (-not (Send-Event -Command "ClipboardUpdated" -Data $data))
+                    { break }
+
+                    $oldClipboard = $currentClipboard
+
+                    $eventTriggered = $true
+                    $HostSyncHash.Host.UI.WriteLine("2")
+                }
+                
+                # Send a Keep-Alive if during this second iteration nothing happened.
+                if (-not $eventTriggered)
+                {
+                    if (-not (Send-Event -Command "KeepAlive"))
+                    { break }
+                }
+            }
+            finally
+            {
+                $stopWatch.Restart()
+            }
         }
 
         # Monitor for global mouse cursor change
+        # Update Frequently (Maximum probe time to be efficient: 30ms)
         $currentCursor = Get-GlobalMouseCursorIconHandle
         if ($currentCursor -ne 0 -and $currentCursor -ne $oldCursor)
         {   
             $cursorTypeName = ($cursors.GetEnumerator() | ? { $_.Value -eq $currentCursor }).Key
 
-            $command = New-Object -TypeName PSCustomObject -Property @{
-                Id = [OutputCommand]::MouseCursorUpdated
+            $data = New-Object -TypeName PSCustomObject -Property @{                
                 Cursor = $cursorTypeName
             }             
 
-            try 
-            {
-                $Param.Writer.WriteLine(($command | ConvertTo-Json -Compress))            
-            }
-            catch 
+            if (-not (Send-Event -Command "MouseCursorUpdated" -Data $data))
             { break }
 
             $oldCursor = $currentCursor
-        }                
+        }    
 
         Start-Sleep -Milliseconds 30 
     } 
