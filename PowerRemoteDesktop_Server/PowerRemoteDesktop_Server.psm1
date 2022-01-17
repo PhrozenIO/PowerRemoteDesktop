@@ -52,9 +52,14 @@
 
 Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
-Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
+Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();[DllImport("User32.dll")] public static extern int LoadCursorA(int hInstance, int lpCursorName);[DllImport("User32.dll")] public static extern bool GetCursorInfo(IntPtr pci);' -Name User32 -Namespace W;
 
 $global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
+
+# Used for debugging purpose (For debugging runspaces)
+$global:HostSyncHash = [HashTable]::Synchronized(@{
+    host = $host
+})
 
 enum TransportMode {
     Raw = 1
@@ -123,7 +128,7 @@ function New-RandomPassword
         .DESCRIPTION
             Generate new password candidates until one candidate match complexity rules.
             Generally only one iteration is enough but in some rare case it could be one or two more.
-            TODO: Better algorythm to avoid loop ?
+            TODO: Better algorithm to avoid loop ?
     #>
     do
     {
@@ -654,17 +659,19 @@ class ClientIO {
             $false,
             $TLSVersion,
             $false
-        )
+        )        
 
         if (-not $this.SSLStream.IsEncrypted)
         {
             throw "Could not established an encrypted tunnel with remote peer."
         }
 
+        $this.SSLStream.WriteTimeout = 5000
+
         Write-Verbose "Open communication channels..."
 
         $this.Writer = New-Object System.IO.StreamWriter($this.SSLStream)
-        $this.Writer.AutoFlush = $true
+        $this.Writer.AutoFlush = $true        
 
         $this.Reader = New-Object System.IO.StreamReader($this.SSLStream)      
 
@@ -805,11 +812,19 @@ class ClientIO {
     }
 
     [string]RemoteAddress() {
-        <#
-            .SYNOPSIS
-                Returns the remote address of peer.
-        #>
         return $this.Client.Client.RemoteEndPoint.Address
+    }
+
+    [int]RemotePort() {
+        return $this.Client.Client.RemoteEndPoint.Port
+    }
+
+    [string]LocalAddress() {
+        return $this.Client.Client.LocalEndPoint.Address
+    }    
+
+    [int]LocalPort() {
+        return $this.Client.Client.LocalEndPoint.Port
     }
 
     [void]Close() {    
@@ -992,7 +1007,7 @@ class ServerIO {
             $this.TransportMode
         )
         try
-        {
+        {            
             Write-Verbose "New client socket connected: ""$($client.RemoteAddress())"". Proceed password authentication..."            
 
             # STEP 1 : Authentication
@@ -1055,9 +1070,15 @@ $global:DesktopStreamScriptBlock = {
 
             This code is expected to be run inside a new PowerShell Runspace.
 
-        .PARAMETER syncHash.Param.Client
+        .PARAMETER Param.Client
             A ClientIO Object containing an active connection. This is where, desktop updates will be
             sent over network.     
+
+        .PARAMETER Param.ImageQuality
+            Desired desktop image compression level (0..100).
+
+        .PARAMETER Param.Screen
+            An object destribing which screen (desktop monitor) to capture.
     #>     
 
     function Get-DesktopImage {	
@@ -1113,9 +1134,9 @@ $global:DesktopStreamScriptBlock = {
     } 
 
     $imageQuality = 100
-    if ($syncHash.Param.ImageQuality -ge 0 -and $syncHash.Param.ImageQuality -lt 100)
+    if ($Param.ImageQuality -ge 0 -and $Param.ImageQuality -lt 100)
     {
-        $imageQuality = $syncHash.Param.ImageQuality
+        $imageQuality = $Param.ImageQuality
     }
     try
     {
@@ -1132,7 +1153,7 @@ $global:DesktopStreamScriptBlock = {
         {           
             try
             {                                                           
-                $desktopImage = Get-DesktopImage -Screen $syncHash.Param.Screen                                                                   
+                $desktopImage = Get-DesktopImage -Screen $Param.Screen                                                                   
 
                 $imageStream = New-Object System.IO.MemoryStream
 
@@ -1160,11 +1181,11 @@ $global:DesktopStreamScriptBlock = {
                     $imageStream.position = 0 
                     try 
                     {
-                        switch ($syncHash.Param.Client.TransportMode)
+                        switch ($Param.Client.TransportMode)
                         {
                             "Raw"
                             {
-                                $syncHash.Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
+                                $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
 
                                 $totalBytesSent = 0
 
@@ -1186,7 +1207,7 @@ $global:DesktopStreamScriptBlock = {
                                     # (OPTIMIZATION IDEA): Try with BinaryStream to save the need of "byte[]"" buffer.
                                     $null = $imageStream.Read($buffer, 0, $buffer.Length)
 
-                                    $syncHash.Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
+                                    $Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
 
                                     $totalBytesSent += $bufferSize                                                               
                                 } until ($totalBytesSent -eq $imageStream.Length)  
@@ -1196,7 +1217,7 @@ $global:DesktopStreamScriptBlock = {
 
                             "Base64"
                             {
-                                $syncHash.Param.Client.Writer.WriteLine(
+                                $Param.Client.Writer.WriteLine(
                                     [System.Convert]::ToBase64String($imageStream.ToArray())
                                 )
 
@@ -1241,16 +1262,15 @@ $global:DesktopStreamScriptBlock = {
     }
 }
 
-$global:InputControlScriptBlock = {   
+$global:IngressEventScriptBlock = {   
     <#
         .SYNOPSIS
             Threaded code block to receive remote orders (Ex: Keyboard Strokes, Mouse Clicks, Moves etc...)
 
             This code is expected to be run inside a new PowerShell Runspace.
 
-        .PARAMETER syncHash.Client
-            A ClientIO Object containing an active connection. This is where, remote events will be
-            received and treated.            
+        .PARAMETER Param.Client
+            A ClientIO Object with an established connection to remote peer.
     #>
 
     Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);[DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);' -Name U32 -Namespace W;
@@ -1325,19 +1345,20 @@ $global:InputControlScriptBlock = {
     {       
         try 
         {            
-            $jsonCommand = $syncHash.Param.Client.Reader.ReadLine()                        
+            $jsonCommand = $Param.Reader.ReadLine()                        
         }
         catch
         { 
             # ($_ | Out-File "c:\temp\debug.txt")
             
             break 
+        }        
+
+        try
+        {
+            $command = $jsonCommand | ConvertFrom-Json
         }
-
-        if (-not $jsonCommand)
-        { break }
-
-        $command = $jsonCommand | ConvertFrom-Json
+        catch { continue }
 
         if (-not ($command.PSobject.Properties.name -match "Id"))
         { continue }                                             
@@ -1430,6 +1451,183 @@ $global:InputControlScriptBlock = {
     }    
 }
 
+$global:EgressEventScriptBlock = {
+    <#
+        .SYNOPSIS
+            This script block is used to send events to remote peer.
+
+            This code is expected to be run inside a new PowerShell Runspace.
+
+        .DESCRIPTION
+            Supported Events:
+                - Global Mouse Cursor State
+
+            Future Events to Support:
+                - Clipboard
+                - Receive File
+    #>
+
+    enum CursorType {
+        IDC_APPSTARTING = 32650
+        IDC_ARROW = 32512
+        IDC_CROSS = 32515
+        IDC_HAND = 32649
+        IDC_HELP = 32651
+        IDC_IBEAM = 32513
+        IDC_ICON = 32641
+        IDC_NO = 32648
+        IDC_SIZE = 32640
+        IDC_SIZEALL = 32646
+        IDC_SIZENESW = 32643
+        IDC_SIZENS = 32645
+        IDC_SIZENWSE = 32642
+        IDC_SIZEWE = 32644
+        IDC_UPARROW = 32516
+        IDC_WAIT = 32514
+    }
+
+    enum OutputCommand {
+        KeepAlive = 0x1
+        MouseCursorUpdated = 0x2       
+    }
+
+    function Initialize-Cursors
+    {
+        <#
+            .SYNOPSIS
+                Initialize different Windows supported mouse cursors.
+
+            .DESCRIPTION
+                Unfortunately, there is not WinAPI to get current mouse cursor icon state (Ex: as a flag) 
+                but only current mouse cursor icon (via its handle).
+
+                One solution, is to resolve each supported mouse cursor handles (HCURSOR) with corresponding name 
+                in a hashtable and then compare with GetCursorInfo() HCURSOR result.
+        #>
+        $cursors = @{}
+
+        foreach ($cursorType in [CursorType].GetEnumValues()) { 
+            $result = [W.User32]::LoadCursorA(0, [int]$cursorType)
+
+            if ($result -gt 0)
+            {
+                $cursors[[string] $cursorType] = $result
+            }
+        }
+
+        return $cursors
+    }        
+
+    function Get-GlobalMouseCursorIconHandle
+    {
+        <#
+            .SYNOPSIS
+                Return global mouse cursor handle.
+            .DESCRIPTION
+                For this project I really want to avoid using "inline c#" but only pure PowerShell Code.
+                I'm using a Hackish method to retrieve the global Windows cursor info by playing by hand
+                with memory to prepare and read CURSORINFO structure.
+                ---
+                typedef struct tagCURSORINFO {
+                    DWORD   cbSize;       // Size: 0x4
+                    DWORD   flags;        // Size: 0x4
+                    HCURSOR hCursor;      // Size: 0x4 (32bit) , 0x8 (64bit)
+                    POINT   ptScreenPos;  // Size: 0x8
+                } CURSORINFO, *PCURSORINFO, *LPCURSORINFO;
+                Total Size of Structure:
+                    - [32bit] 20 Bytes
+                    - [64bit] 24 Bytes
+        #>
+
+        # sizeof(cbSize) + sizeof(flags) + sizeof(ptScreenPos) = 16
+        $structSize = [IntPtr]::Size + 16
+
+        $cursorInfo = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($structSize)
+        try
+        {
+            # ZeroMemory(@cursorInfo, SizeOf(tagCURSORINFO))
+            for ($i = 0; $i -lt $structSize; $i++)
+            {
+                [System.Runtime.InteropServices.Marshal]::WriteByte($cursorInfo, $i, 0x0)    
+            }
+
+            [System.Runtime.InteropServices.Marshal]::WriteInt32($cursorInfo, 0x0, $structSize)
+
+            if ([W.User32]::GetCursorInfo($cursorInfo))
+            {
+                $hCursor = [System.Runtime.InteropServices.Marshal]::ReadInt64($cursorInfo, 0x8)
+
+                return $hCursor
+            }    
+
+            <#for ($i = 0; $i -lt $structSize; $i++)
+            {
+                $offsetValue = [System.Runtime.InteropServices.Marshal]::ReadByte($cursorInfo, $i)
+                Write-Host "Offset: ${i} -> " -NoNewLine
+                Write-Host $offsetValue -ForegroundColor Green -NoNewLine
+                Write-Host ' (' -NoNewLine
+                Write-Host ('0x{0:x}' -f $offsetValue) -ForegroundColor Cyan -NoNewLine
+                Write-Host ')'
+            }#>
+        }
+        finally
+        {
+            [System.Runtime.InteropServices.Marshal]::FreeHGlobal($cursorInfo)
+        }
+    }
+
+    $cursors = Initialize-Cursors
+
+    $oldCursor = 0
+
+    $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    while ($true)
+    {
+        # Keep-Alive (Detect Disconnected Socket)
+        if ($stopWatch.ElapsedMilliseconds -ge 1000)
+        {
+            $command = New-Object -TypeName PSCustomObject -Property @{
+                Id = [OutputCommand]::KeepAlive                
+            } 
+
+            try 
+            {
+                $Param.Writer.WriteLine(($command | ConvertTo-Json -Compress))  
+            }
+            catch 
+            { break }
+
+            $stopWatch.Restart()
+        }
+
+        # Monitor for global mouse cursor change
+        $currentCursor = Get-GlobalMouseCursorIconHandle
+        if ($currentCursor -ne 0 -and $currentCursor -ne $oldCursor)
+        {   
+            $cursorTypeName = ($cursors.GetEnumerator() | ? { $_.Value -eq $currentCursor }).Key
+
+            $command = New-Object -TypeName PSCustomObject -Property @{
+                Id = [OutputCommand]::MouseCursorUpdated
+                Cursor = $cursorTypeName
+            }             
+
+            try 
+            {
+                $Param.Writer.WriteLine(($command | ConvertTo-Json -Compress))            
+            }
+            catch 
+            { break }
+
+            $oldCursor = $currentCursor
+        }                
+
+        Start-Sleep -Milliseconds 30 
+    } 
+
+    $stopWatch.Stop()
+}
+
 function New-RunSpace
 {
     <#
@@ -1457,20 +1655,18 @@ function New-RunSpace
         [PSCustomObject] $Param = $null
     )   
 
-    $syncHash = [HashTable]::Synchronized(@{})    
-    $syncHash.host = $host # For debugging purpose
-
-    if ($Param)
-    {
-        $syncHash.Param = $Param
-    }
-
     $runspace = [RunspaceFactory]::CreateRunspace()
     $runspace.ThreadOptions = "ReuseThread"
     $runspace.ApartmentState = "STA"
     $runspace.Open()                   
 
-    $runspace.SessionStateProxy.SetVariable("syncHash", $syncHash) 
+    if ($Param)
+    {
+        $runspace.SessionStateProxy.SetVariable("Param", $Param) 
+    }
+
+    # Debug (Dev Only)
+    $runspace.SessionStateProxy.SetVariable("HostSyncHash", $global:HostSyncHash)
 
     $powershell = [PowerShell]::Create().AddScript($ScriptBlock)
 
@@ -1664,7 +1860,7 @@ function Invoke-RemoteDesktopServer
                 # Otherwise a Timeout Exception will be raised.
                 # Actually, if someone else decide to connect in the mean time it will interrupt the whole session,
                 # Remote Viewer will then need to establish a new session from scratch.
-                $clientControl = $server.PullClient(10 * 1000);           
+                $clientEvents = $server.PullClient(10 * 1000);           
 
                 # Grab desired screen to capture
                 $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { $_.DeviceName -eq $server.Session.Screen }
@@ -1678,20 +1874,33 @@ function Invoke-RemoteDesktopServer
                 
                 $newRunspace = (New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                
                 $runspaces.Add($newRunspace)
+            
+                # Notice: In current PowerRemoteDesktop Protocol design, Client wont Read or Write simultaneously from different
+                # threads. Sockets allow to Read and Write at the same time but not Read or Write at the same 
+                # time.
 
-                # Create Runspace #2 for Input Control.
-                $param = New-Object -TypeName PSCustomObject -Property @{                      
-                    Client = $clientControl                
+                # If protocol change and require simultaneously Read or Write from different threads
+                # I will need to implement a synchronization mechanism to avoid conflicts like Synchronized Hashtables.
+
+                # Create Runspace #2 for Incoming Events.
+                $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
+                    Reader = $clientEvents.Reader                 
                 }
 
-                $newRunspace = (New-RunSpace -ScriptBlock $global:InputControlScriptBlock -Param $param)                  
+                $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)                  
+                $runspaces.Add($newRunspace)  
+
+                # Create Runspace #3 for Outgoing Events
+                $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
+                    Writer = $clientEvents.Writer
+                }
+
+                $newRunspace = (New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param)                  
                 $runspaces.Add($newRunspace)  
 
                 # Waiting for Runspaces to finish their jobs.
                 while ($true)
-                {
-                    # TODO: Inspect TCP Table to probe for ghost connections and gracefully close them.
-
+                {                
                     $completed = $true                    
                     
                     # Probe each existing runspaces
@@ -1722,9 +1931,9 @@ function Invoke-RemoteDesktopServer
                 
                 $server.CloseSession()
 
-                if ($clientControl) 
+                if ($clientEvents) 
                 {
-                    $clientControl.Close()
+                    $clientEvents.Close()
                 }
 
                 if ($clientDesktop)

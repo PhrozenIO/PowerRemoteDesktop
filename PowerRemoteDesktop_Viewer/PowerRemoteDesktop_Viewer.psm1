@@ -55,6 +55,11 @@ Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool 
 
 $global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
 
+# Used for debugging purpose (For debugging runspaces)
+$global:HostSyncHash = [HashTable]::Synchronized(@{
+    host = $host
+})
+
 # Last until PowerShell session is closed
 $global:EphemeralTrustedServers = @()
 
@@ -349,22 +354,22 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
             This code is expected to be run inside a new PowerShell Runspace.        
 
-        .PARAMETER syncHash.Client
+        .PARAMETER Param.Client
             A ClientIO Class instance for handling desktop updates.
 
-        .PARAMETER syncHash.Param.RequireResize
+        .PARAMETER Param.RequireResize
             Tell if desktop image needs to be resized to fit viewer screen constrainsts.
 
-        .PARAMETER syncHash.Param.VirtualDesktopWidth
+        .PARAMETER Param.VirtualDesktopWidth
             The integer value representing remote screen width.
 
-        .PARAMETER syncHash.Param.VirtualDesktopHeight
+        .PARAMETER Param.VirtualDesktopHeight
             The integer value representing remote screen height.
 
-        .PARAMETER syncHash.Param.VirtualDesktopForm
-            Virtual Desktop Object containing both Form and PaintBox.       
+        .PARAMETER Param.SyncHash
+            Synchronized Hashtable containing objects to "safe-thread"       
 
-        .PARAMETER syncHash.Param.TransportMode
+        .PARAMETER Param.TransportMode
             Define desktop image transport mode: Raw or Base64. This value is defined by server following
             its options.
     #>
@@ -440,13 +445,13 @@ $global:VirtualDesktopUpdaterScriptBlock = {
             $stream = New-Object System.IO.MemoryStream
             try
             {      
-                switch ([TransportMode] $syncHash.Param.TransportMode)         
+                switch ([TransportMode] $Param.TransportMode)         
                 {
                     "Raw"
                     {                         
                         $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
 
-                        $syncHash.Client.SSLStream.Read($buffer, 0, $buffer.Length)
+                        $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
 
                         [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
 
@@ -471,7 +476,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                                 $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
                             }                
 
-                            $syncHash.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
+                            $Param.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
 
                             $null = $stream.Write($buffer, 0, $buffer.Length)
 
@@ -481,7 +486,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                     "Base64"
                     {
-                        [byte[]] $buffer = [System.Convert]::FromBase64String(($syncHash.Client.Reader.ReadLine()))
+                        [byte[]] $buffer = [System.Convert]::FromBase64String(($Param.Client.Reader.ReadLine()))
 
                         $stream.Write($buffer, 0, $buffer.Length)   
                     }
@@ -489,22 +494,21 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                 $stream.Position = 0                                                                
 
-                if ($syncHash.Param.RequireResize)
+                if ($Param.RequireResize)
                 {
-                   #$image = [System.Drawing.Image]::FromStream($stream)
+                    #$image = [System.Drawing.Image]::FromStream($stream)
 
-                   $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
+                    $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
 
-                   $syncHash.Param.VirtualDesktopForm.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $syncHash.Param.VirtualDesktopWidth -NewHeight $syncHash.Param.VirtualDesktopHeight                   
+                    $Param.SyncHash.VirtualDesktop.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $Param.VirtualDesktopWidth -NewHeight $Param.VirtualDesktopHeight                   
                 }
                 else
                 {                    
-                    $syncHash.Param.VirtualDesktopForm.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
+                    $Param.SyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
                 }
             }
             catch 
-            {
-                $syncHash.Param.host.UI.WriteLine($_)
+            {               
                 break
             }            
             finally
@@ -515,9 +519,106 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         }
     }
     finally
-    {
-        $syncHash.Param.VirtualDesktopForm.Form.Close()
+    {        
+        $Param.SyncHash.VirtualDesktop.Form.Close()
     }
+}
+
+$global:IngressEventScriptBlock = {
+    <#
+        .SYNOPSIS
+            Threaded code block to receive remote events.
+
+            This code is expected to be run inside a new PowerShell Runspace.
+
+        .PARAMETER Param.Client
+            A ClientIO Object with an established connection to remote server.        
+    #>
+
+    enum CursorType {
+        IDC_APPSTARTING
+        IDC_ARROW
+        IDC_CROSS
+        IDC_HAND
+        IDC_HELP
+        IDC_IBEAM
+        IDC_ICON
+        IDC_NO
+        IDC_SIZE
+        IDC_SIZEALL
+        IDC_SIZENESW
+        IDC_SIZENS
+        IDC_SIZENWSE
+        IDC_SIZEWE
+        IDC_UPARROW
+        IDC_WAIT
+    }
+
+    enum OutputCommand {
+        KeepAlive = 0x1
+        MouseCursorUpdated = 0x2       
+    }
+    
+    while ($true)                    
+    {        
+        try
+        {         
+            $jsonCommand = $Param.Client.Reader.ReadLine()                        
+        }
+        catch
+        { break }        
+
+        try
+        {
+            $command = $jsonCommand | ConvertFrom-Json
+        }
+        catch
+        { continue }
+
+        if (-not ($command.PSobject.Properties.name -match "Id"))
+        { continue }           
+        
+        switch ([OutputCommand] $command.Id)
+        {        
+            # Remote Global Mouse Cursor State Changed (Icon)
+            "MouseCursorUpdated"
+            {                
+                if (-not ($command.PSobject.Properties.name -match "Cursor"))
+                { continue } 
+
+                $cursor = [System.Windows.Forms.Cursors]::Arrow
+
+                switch ([CursorType] $command.Cursor)
+                {                    
+                    "IDC_APPSTARTING" { $cursor = [System.Windows.Forms.Cursors]::AppStarting }                    
+                    "IDC_CROSS" { $cursor = [System.Windows.Forms.Cursors]::Cross }
+                    "IDC_HAND" { $cursor = [System.Windows.Forms.Cursors]::Hand }
+                    "IDC_HELP" { $cursor = [System.Windows.Forms.Cursors]::Help }
+                    "IDC_IBEAM" { $cursor = [System.Windows.Forms.Cursors]::IBeam }                    
+                    "IDC_NO" { $cursor = [System.Windows.Forms.Cursors]::No }                    
+                    "IDC_SIZENESW" { $cursor = [System.Windows.Forms.Cursors]::SizeNESW }
+                    "IDC_SIZENS" { $cursor = [System.Windows.Forms.Cursors]::SizeNS }
+                    "IDC_SIZENWSE" { $cursor = [System.Windows.Forms.Cursors]::SizeNWSE }
+                    "IDC_SIZEWE" { $cursor = [System.Windows.Forms.Cursors]::SizeWE }
+                    "IDC_UPARROW" { $cursor = [System.Windows.Forms.Cursors]::UpArrow }
+                    "IDC_WAIT" { $cursor = [System.Windows.Forms.Cursors]::WaitCursor }
+
+                     {($_ -eq "IDC_SIZE") -or ($_ -eq "IDC_SIZEALL")}
+                     {
+                        $cursor = [System.Windows.Forms.Cursors]::SizeAll 
+                    }
+                }
+
+                try 
+                {
+                    $Param.SyncHash.VirtualDesktop.Picture.Cursor = $cursor
+                }
+                catch {  }
+
+                break
+            }
+        }
+    }    
 }
 
 class ClientIO {
@@ -687,6 +788,8 @@ class ClientIO {
         {
             throw "Could not establish a secure communication channel with remote server."
         }
+
+        $this.SSLStream.WriteTimeout = 5000
 
         $this.Writer = New-Object System.IO.StreamWriter($this.SSLStream)
         $this.Writer.AutoFlush = $true
@@ -923,7 +1026,7 @@ class ViewerSession
     [bool] $TLSv1_3 = $false        
 
     [ClientIO] $ClientDesktop = $null
-    [ClientIO] $ClientControl = $null
+    [ClientIO] $ClientEvents = $null
 
     ViewerSession(        
         [string] $ServerAddress,
@@ -1001,12 +1104,12 @@ class ViewerSession
 
             Write-Verbose "Open secondary tunnel for input control..."
 
-            $this.ClientControl = [ClientIO]::new($this.ServerAddress, $this.ServerPort, $this.TLSv1_3) 
-            $this.ClientControl.Connect()    
+            $this.ClientEvents = [ClientIO]::new($this.ServerAddress, $this.ServerPort, $this.TLSv1_3) 
+            $this.ClientEvents.Connect()    
             
-            $this.ClientControl.Authentify($this.SecurePassword)
+            $this.ClientEvents.Authentify($this.SecurePassword)
 
-            $this.ClientControl.Hello($this.SessionInformation.SessionId)
+            $this.ClientEvents.Hello($this.SessionInformation.SessionId)
 
             Write-Verbose "New session successfully established with remote server."
             Write-Verbose "Session Id: $($this.SessionInformation.SessionId)"
@@ -1033,13 +1136,13 @@ class ViewerSession
             $this.ClientDesktop.Close()
         }
 
-        if ($this.ClientControl)
+        if ($this.ClientEvents)
         {
-            $this.ClientControl.Close()
+            $this.ClientEvents.Close()
         }        
 
         $this.ClientDesktop = $null
-        $this.ClientControl = $null
+        $this.ClientEvents = $null
         
         $this.SessionInformation = $null
         
@@ -1109,9 +1212,6 @@ function New-RunSpace
             Notice: the $host variable is used for debugging purpose to write on caller PowerShell
             Terminal.
 
-        .PARAMETER Client
-            A ClientIO object containing an active connection with a remote server.
-
         .PARAMETER ScriptBlock
             A PowerShell block of code to be evaluated on the new Runspace.
 
@@ -1124,29 +1224,23 @@ function New-RunSpace
 
     param(
         [Parameter(Mandatory=$True)]
-        [ClientIO] $Client,
-
-        [Parameter(Mandatory=$True)]
         [ScriptBlock] $ScriptBlock,
 
         [PSCustomObject] $Param = $null
     )   
-
-    $syncHash = [HashTable]::Synchronized(@{})
-    $syncHash.Client = $Client
-    $syncHash.host = $host # For debugging purpose
-
-    if ($Param)
-    {
-        $syncHash.Param = $Param
-    }
 
     $runspace = [RunspaceFactory]::CreateRunspace()
     $runspace.ThreadOptions = "ReuseThread"
     $runspace.ApartmentState = "STA"
     $runspace.Open()                   
 
-    $runspace.SessionStateProxy.SetVariable("syncHash", $syncHash) 
+    if ($Param)
+    {
+        $runspace.SessionStateProxy.SetVariable("Param", $Param) 
+    }
+
+    # Debug (Dev Only)
+    $runspace.SessionStateProxy.SetVariable("HostSyncHash", $global:HostSyncHash)
 
     $powershell = [PowerShell]::Create().AddScript($ScriptBlock)
 
@@ -1214,6 +1308,8 @@ function Invoke-RemoteDesktopViewer
         [switch] $DisableVerbosity
     )
 
+    [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
+
     $oldErrorActionPreference = $ErrorActionPreference
     $oldVerbosePreference = $VerbosePreference
     try
@@ -1256,9 +1352,11 @@ function Invoke-RemoteDesktopViewer
 
             Write-Verbose "Create WinForms Environment..."
 
-            $virtualDesktopForm = New-VirtualDesktopForm            
+            $syncHash = [HashTable]::Synchronized(@{
+                VirtualDesktop = New-VirtualDesktopForm
+            })            
 
-            $virtualDesktopForm.Form.Text = [string]::Format(
+            $syncHash.VirtualDesktop.Form.Text = [string]::Format(
                 "Power Remote Desktop: {0}/{1} - {2}", 
                 $session.SessionInformation.Username,
                 $session.SessionInformation.MachineName,
@@ -1268,8 +1366,8 @@ function Invoke-RemoteDesktopViewer
             # Prepare Virtual Desktop 
             $locationResolutionInformation = [System.Windows.Forms.Screen]::PrimaryScreen
 
-            $screenRect = $virtualDesktopForm.Form.RectangleToScreen($virtualDesktopForm.Form.ClientRectangle)
-            $captionHeight = $screenRect.Top - $virtualDesktopForm.Form.Top
+            $screenRect = $syncHash.VirtualDesktop.Form.RectangleToScreen($syncHash.VirtualDesktop.Form.ClientRectangle)
+            $captionHeight = $screenRect.Top - $syncHash.VirtualDesktop.Form.Top
 
             $localScreenWidth = $locationResolutionInformation.WorkingArea.Width
             $localScreenHeight = $locationResolutionInformation.WorkingArea.Height           
@@ -1313,12 +1411,12 @@ function Invoke-RemoteDesktopViewer
             }
 
             # Size Virtual Desktop Form Window
-            $virtualDesktopForm.Form.ClientSize = [System.Drawing.Size]::new($virtualDesktopWidth, $virtualDesktopHeight) 
+            $syncHash.VirtualDesktop.Form.ClientSize = [System.Drawing.Size]::new($virtualDesktopWidth, $virtualDesktopHeight) 
 
             # Center Virtual Desktop Form
-            $virtualDesktopForm.Form.Location = [System.Drawing.Point]::new(
-                (($localScreenWidth - $virtualDesktopForm.Form.Width) / 2),
-                (($localScreenHeight - $virtualDesktopForm.Form.Height) / 2)
+            $syncHash.VirtualDesktop.Form.Location = [System.Drawing.Point]::new(
+                (($localScreenWidth - $syncHash.VirtualDesktop.Form.Width) / 2),
+                (($localScreenHeight - $syncHash.VirtualDesktop.Form.Height) / 2)
             )            
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
@@ -1390,9 +1488,6 @@ function Invoke-RemoteDesktopViewer
                         .PARAMETER Keys
                             Plain text keys to be simulated on remote computer.
 
-                        .TODO
-                            Supports more complex keys (ARROWS ETC...)
-
                         .EXAMPLE
                             New-KeyboardCommand -Keys "Hello, World"
                             New-KeyboardCommand -Keys "t"
@@ -1454,7 +1549,7 @@ function Invoke-RemoteDesktopViewer
 
                     $command = (New-MouseCommand -X $X -Y $Y -Button $Button -Type $Type)                    
 
-                    $session.ClientControl.Writer.WriteLine(($command | ConvertTo-Json -Compress))                    
+                    $session.ClientEvents.Writer.WriteLine(($command | ConvertTo-Json -Compress))                    
                 }
 
                 function Send-VirtualKeyboard
@@ -1477,10 +1572,10 @@ function Invoke-RemoteDesktopViewer
 
                     $command = (New-KeyboardCommand -Keys $KeyChain)                                
 
-                    $session.ClientControl.Writer.WriteLine(($command  | ConvertTo-Json -Compress)) 
+                    $session.ClientEvents.Writer.WriteLine(($command  | ConvertTo-Json -Compress)) 
                 }
 
-                $virtualDesktopForm.Form.Add_KeyPress(
+                $syncHash.VirtualDesktop.Form.Add_KeyPress(
                     { 
                         if ($_.KeyChar)
                         {
@@ -1505,7 +1600,7 @@ function Invoke-RemoteDesktopViewer
                     }
                 )
 
-                $virtualDesktopForm.Form.Add_KeyDown(
+                $syncHash.VirtualDesktop.Form.Add_KeyDown(
                     {                       
                         $result = ""
                         switch ($_.KeyValue)
@@ -1554,32 +1649,32 @@ function Invoke-RemoteDesktopViewer
                     }
                 )                        
 
-                $virtualDesktopForm.Picture.Add_MouseDown(
+                $syncHash.VirtualDesktop.Picture.Add_MouseDown(
                     {                         
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Down"
                     }
                 )
 
-                $virtualDesktopForm.Picture.Add_MouseUp(
+                $syncHash.VirtualDesktop.Picture.Add_MouseUp(
                     { 
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Up"
                     }
                 )
 
-                $virtualDesktopForm.Picture.Add_MouseMove(
+                $syncHash.VirtualDesktop.Picture.Add_MouseMove(
                     { 
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Move"
                     }
                 )          
 
-                $virtualDesktopForm.Picture.Add_MouseWheel(
+                $syncHash.VirtualDesktop.Picture.Add_MouseWheel(
                     {
                         $command = New-Object PSCustomObject -Property @{
                             Id = [int][InputCommand]::MouseWheel
                             Delta = $_.Delta
                         }
 
-                        $session.ClientControl.Writer.WriteLine(($command | ConvertTo-Json -Compress))
+                        $session.ClientEvents.Writer.WriteLine(($command | ConvertTo-Json -Compress))
                     }
                 )  
             }
@@ -1587,18 +1682,30 @@ function Invoke-RemoteDesktopViewer
             Write-Verbose "Create runspace for desktop streaming..."            
 
             $param = New-Object -TypeName PSCustomObject -Property @{
-                VirtualDesktopForm = $virtualDesktopForm                            
+                Client = $session.ClientDesktop
+                SyncHash = $syncHash                            
                 VirtualDesktopWidth = $virtualDesktopWidth 
                 VirtualDesktopHeight = $virtualDesktopHeight
                 RequireResize = $requireResize
-                TransportMode = $session.SessionInformation.TransportMode
+                TransportMode = $session.SessionInformation.TransportMode                
             }
 
-            $newRunspace = (New-RunSpace -Client $session.ClientDesktop -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  
+            $newRunspace = (New-RunSpace -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  
+            $runspaces.Add($newRunspace)
+
+            Write-Verbose "Create runspace for incoming events..."
+
+            $param = New-Object -TypeName PSCustomObject -Property @{
+                Client = $session.ClientEvents
+                SyncHash = $syncHash
+            }
+
+            $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)  
+            $runspaces.Add($newRunspace)
 
             Write-Verbose "Done. Showing Virtual Desktop Form."                       
 
-            $null = $virtualDesktopForm.Form.ShowDialog()
+            $null = $syncHash.VirtualDesktop.Form.ShowDialog()
         }
         finally
         {    
@@ -1611,16 +1718,19 @@ function Invoke-RemoteDesktopViewer
                 $session = $null
             }            
 
-            if ($newRunspace) 
-            {         
-                $null = $newRunspace.PowerShell.EndInvoke($newRunspace.AsyncResult)
-                $newRunspace.PowerShell.Runspace.Dispose()                                      
-                $newRunspace.PowerShell.Dispose()  
-            } 
+            Write-Verbose "Free runspaces..."
 
-            if ($param.VirtualDesktopForm)
+            foreach ($runspace in $runspaces)
+            {
+                $null = $runspace.PowerShell.EndInvoke($runspace.AsyncResult)
+                $runspace.PowerShell.Runspace.Dispose()                                      
+                $runspace.PowerShell.Dispose()                    
+            }    
+            $runspaces.Clear() 
+
+            if ($syncHash.VirtualDesktop)
             {            
-                $param.VirtualDesktopForm.Form.Dispose()
+                $syncHash.VirtualDesktop.Form.Dispose()
             }                                    
         }           
     }
