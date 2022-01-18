@@ -1623,7 +1623,11 @@ $global:EgressEventScriptBlock = {
     $cursors = Initialize-Cursors
 
     $oldCursor = 0
-    $oldClipboard = Get-Clipboard
+
+    if ($Param.SynchronizeClipboard)
+    {
+        $oldClipboard = Get-Clipboard
+    }
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -1638,25 +1642,26 @@ $global:EgressEventScriptBlock = {
             {
                 $eventTriggered = $false
 
-                # IDEA: Check for existing clipboard change event or implement a custom clipboard
-                # change detector using "WM_CLIPBOARDUPDATE" for example.
-                # It is not very important but it would avoid calling "Get-Clipboard" every seconds.                
-                $currentClipboard = Get-Clipboard
-
-                if ($currentClipboard -and $currentClipboard -cne $oldClipboard)
+                if ($Param.SynchronizeClipboard)
                 {
-                    $HostSyncHash.Host.UI.WriteLine("1")
-                    $data = New-Object -TypeName PSCustomObject -Property @{                
-                        Text = $currentClipboard
-                    } 
+                    # IDEA: Check for existing clipboard change event or implement a custom clipboard
+                    # change detector using "WM_CLIPBOARDUPDATE" for example (WITHOUT INLINE C#)
+                    # It is not very important but it would avoid calling "Get-Clipboard" every seconds.                
+                    $currentClipboard = Get-Clipboard
 
-                    if (-not (Send-Event -Command "ClipboardUpdated" -Data $data))
-                    { break }
+                    if ($currentClipboard -and $currentClipboard -cne $oldClipboard)
+                    {                    
+                        $data = New-Object -TypeName PSCustomObject -Property @{                
+                            Text = $currentClipboard
+                        } 
 
-                    $oldClipboard = $currentClipboard
+                        if (-not (Send-Event -Command "ClipboardUpdated" -Data $data))
+                        { break }
 
-                    $eventTriggered = $true
-                    $HostSyncHash.Host.UI.WriteLine("2")
+                        $oldClipboard = $currentClipboard
+
+                        $eventTriggered = $true                    
+                    }
                 }
                 
                 # Send a Keep-Alive if during this second iteration nothing happened.
@@ -1807,6 +1812,10 @@ function Invoke-RemoteDesktopServer
             JPEG Compression level from 0 to 100
                 0 = Lowest quality.
                 100 = Highest quality.
+
+        .PARAMETER DisableClipboard
+            This option disable Clipboard synchronization with remote peer. By default Clipboard synchronization
+            is enabled and will synchronize only if both Viewer and Server have Clipboard synchronization enabled.
     #>
 
     param (
@@ -1823,7 +1832,9 @@ function Invoke-RemoteDesktopServer
         
         [switch] $DisableVerbosity,
 
-        [int] $ImageQuality = 100
+        [int] $ImageQuality = 100,
+
+        [switch] $DisableClipboard
     )
 
 
@@ -1960,6 +1971,7 @@ function Invoke-RemoteDesktopServer
                 # Create Runspace #3 for Outgoing Events
                 $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
                     Writer = $clientEvents.Writer
+                    SynchronizeClipboard = -not $DisableClipboard
                 }
 
                 $newRunspace = (New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param)                  

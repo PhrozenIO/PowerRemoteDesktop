@@ -831,7 +831,7 @@ class ClientIO {
         Write-Verbose "Candidate: ""${candidate}"""
         Write-Verbose "Solution: ""${challengeSolution}"""
         Write-Verbose "---"            
-
+        
         $this.Writer.WriteLine($challengeSolution)
 
         $result = $this.Reader.ReadLine()
