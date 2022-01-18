@@ -294,13 +294,14 @@ Detail                           Fingerprint
 
 ![Server Fingerprint Validation](Assets/server-fingerprint-validation.png)
 
-### XX January 2022 (1.0.5 Beta 6)
+### 18 January 2022 (1.0.5 Beta 6)
 
 * Multiple code improvements to support incoming / outgoing events.
 * Global cursor state synchronization implemented (Now virtual desktop mouse cursor is the same as remote server).
 * Password Generator algorithm fixed.
 * Virtual keyboard `]` and `)` correctly sent and interpreted.
 * Clipboard synchronization Viewer <-> Server added.
+* Server support a new option to only show desktop (Mouse moves, clicks, wheel and keyboard control is disabled in this mode).
 
 ### List of ideas and TODO
 
