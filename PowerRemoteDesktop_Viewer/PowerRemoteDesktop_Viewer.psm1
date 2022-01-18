@@ -1080,8 +1080,8 @@ $global:IngressEventScriptBlock = {
         { continue }
 
         if (-not ($aEvent.PSobject.Properties.name -match "Id"))
-        { continue }           
-        
+        { continue }                       
+
         switch ([InputEvent] $aEvent.Id)
         {        
             # Remote Global Mouse Cursor State Changed (Icon)
@@ -1089,6 +1089,8 @@ $global:IngressEventScriptBlock = {
             {                
                 if (-not ($aEvent.PSobject.Properties.name -match "Cursor"))
                 { continue } 
+
+                $HostSyncHash.Host.Ui.WriteLine($aEvent.Cursor)
 
                 $cursor = [System.Windows.Forms.Cursors]::Arrow
 
@@ -1107,7 +1109,7 @@ $global:IngressEventScriptBlock = {
                     ([CursorType]::IDC_UPARROW) { $cursor = [System.Windows.Forms.Cursors]::UpArrow }
                     ([CursorType]::IDC_WAIT) { $cursor = [System.Windows.Forms.Cursors]::WaitCursor }
 
-                     {($_ -eq ([CursorType]::IDC_SIZE)) -or ($_ -eq [CursorType]::(IDC_SIZEALL))}
+                     {( $_ -eq ([CursorType]::IDC_SIZE) -or $_ -eq ([CursorType]::IDC_SIZEALL) )}
                      {
                         $cursor = [System.Windows.Forms.Cursors]::SizeAll 
                     }
