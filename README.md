@@ -183,7 +183,7 @@ Supported options:
 * `TransportMode`: (Raw or Base64) Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep the Base64 transport method as an alternative.
 * `TLSv1_3`: Define whether or not TLS v1.3 must be used for communication with Viewer.
 * `DisableVerbosity`: Disable verbosity (not recommended)
-* `ImageQuality`: JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.           
+* `ImageQuality`: JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.      
 
 If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
 
@@ -275,22 +275,22 @@ Detail                           Fingerprint
 * Possibility to trust a server for current PowerShell Instance or persistantly using a local storage.
 * Possibility to manage trusted servers (List, Remove, Remove All)
 
+#### Fingerprint Validation
+
+![Server Fingerprint Validation](Assets/server-fingerprint-validation.png)
+
 ### XX January 2022 (1.0.5 Beta 6)
 
 * Multiple code improvements to support incoming / outgoing events.
 * Global cursor state synchronization implemented (Now virtual desktop mouse cursor is the same as remote server).
 * Password Generator algorithm fixed.
 * Virtual keyboard `]` and `)` correctly sent and interpreted.
-
-#### Fingerprint Validation
-
-![Server Fingerprint Validation](Assets/server-fingerprint-validation.png)
+* Clipboard synchronization Viewer <-> Server added.
 
 ### List of ideas and TODO
 
 * 🟢 Support Password Protected external Certificates.
 * 🟢 Mutual Authentication for SSL/TLS (Client Certificate).                     
-* 🟢 Synchronize Clipboard. 
 * 🟠 Listen for local/remote screen resolution update event.
 * 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 
