@@ -65,9 +65,10 @@ enum TransportMode {
 }
 
 enum ClipboardMode {
-    Receive = 1
-    Send = 2
-    Both = 3
+    Disabled = 1
+    Receive = 2
+    Send = 3
+    Both = 4
 }
 
 function Write-Banner 
@@ -1320,14 +1321,13 @@ $global:IngressEventScriptBlock = {
         }
     }
     
-
     $keyboardSim = [KeyboardSim]::New()
 
     while ($true)                    
     {             
         try 
         {            
-            $jsonEvent = $Param.Reader.ReadLine()                        
+            $jsonEvent = $Param.Reader.ReadLine()
         }
         catch
         { 
@@ -1444,7 +1444,7 @@ $global:IngressEventScriptBlock = {
 
             # Clipboard Update
             ([InputEvent]::ClipboardUpdated)
-            {
+            {                
                 if ($Param.Clipboard -eq ([ClipboardMode]::Disabled) -or $Param.Clipboard -eq ([ClipboardMode]::Send))
                 { continue }
 

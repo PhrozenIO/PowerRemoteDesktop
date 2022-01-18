@@ -1517,7 +1517,7 @@ function Invoke-RemoteDesktopViewer
             
             # Create a thread-safe hashtable to send events to remote server.            
             $outputEventSyncHash = [HashTable]::Synchronized(@{
-                Writer = $session.ClientEvents.Writer
+                Writer = $session.ClientEvents.Writer                
             })
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
