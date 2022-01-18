@@ -1,8 +1,6 @@
 <#-------------------------------------------------------------------------------
 
     Power Remote Desktop
-    Version 1.0 beta 2
-    REL: January 2022.
 
     In loving memory of my father. 
     Thanks for all you've done.
