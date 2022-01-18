@@ -19,18 +19,21 @@ Tested on:
 
 ## Features
 
-* Captures Remote Desktop Image with support of HDPI.
-* Supports Mouse Click (Left, Right, Middle), Mouse Moves and Mouse Wheel.
-* Supports Keystrokes Simulation (Sending remote key strokes) and few useful shortcuts.
-* Traffic is encrypted by default using TLSv1.2 and optionnally using TLSv1.3 (TLS 1.3 might not be possible on older systems).
-* Challenge-Based Password Authentication to protect access to server.
-* Support custom SSL/TLS Certificate (File or Encoded in base64). If not specified, a default one is generated and installed on local machine (requires Administrator privileges)
+* Remote Desktop Streaming with support of HDPI and Scaling.
+* Remote Control: Mouse (Moves, Clicks, Wheel) and Key Strokes (Keyboard)
+* **Secure**: Network traffic is encrypted using TLSv1.2 or 1.3. Access to server is granted via a challenge-based authentication mechanism (using user defined complex password).
+* Network traffic encryption is using whether a default X509 Certificate (Requires Administrator) or your custom X509 Certificate.
+* Server certificate fingerprint validation supported and optionally persistent between sessions.
+* Clipboard text synchronization between Viewer and Server.
+* Mouse cursor icon state is synchronized between Viewer (Virtual Desktop) and Server.
+* Multi-Screen (Monitor) support. If remote computer have more than one desktop screen, you can choose which desktop screen to capture.
+* View Only mode for demonstration. You can disable remote control abilities and just show your screen to remote peer.
 
 ## What is still beta
 
-I consider this version as stable but I want to do more tests and have more feedback.
+Version 1.0.5 Beta 6 is the last beta before final version.
 
-I also want to implement few additional features before releasing the version 1.
+No more features will be added in 1.x version, just optimization and bug fix.
 
 ## Installation
 
