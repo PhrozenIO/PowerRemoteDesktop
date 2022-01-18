@@ -66,6 +66,12 @@ enum TransportMode {
     Base64 = 2
 }
 
+enum ClipboardMode {
+    Receive = 1
+    Send = 2
+    Both = 3
+}
+
 function Write-Banner 
 {
     <#
@@ -1454,6 +1460,9 @@ $global:IngressEventScriptBlock = {
             # Clipboard Update
             "ClipboardUpdated"
             {
+                if ($Param.Clipboard -eq "Disabled" -or $Param.Clipboard -eq "Send")
+                { continue }
+
                 if (-not ($aEvent.PSobject.Properties.name -match "Text"))
                 { continue } 
 
@@ -1650,7 +1659,7 @@ $global:EgressEventScriptBlock = {
             {
                 $eventTriggered = $false
 
-                if ($Param.SynchronizeClipboard)
+                if ($Param.Clipboard -eq "Both" -or $Param.Clipboard -eq "Send")
                 {
                     # IDEA: Check for existing clipboard change event or implement a custom clipboard
                     # change detector using "WM_CLIPBOARDUPDATE" for example (WITHOUT INLINE C#)
@@ -1820,9 +1829,12 @@ function Invoke-RemoteDesktopServer
                 0 = Lowest quality.
                 100 = Highest quality.
 
-        .PARAMETER DisableClipboard
-            This option disable Clipboard synchronization with remote peer. By default Clipboard synchronization
-            is enabled and will synchronize only if both Viewer and Server have Clipboard synchronization enabled.
+        .PARAMETER Clipboard
+            Define clipboard synchronization rules:
+                - "Disabled": Completely disable clipboard synchronization.
+                - "Receive": Update local clipboard with remote clipboard only.
+                - "Send": Send local clipboard to remote peer.
+                - "Both": Clipboards are fully synchronized between Viewer and Server.
     #>
 
     param (
@@ -1841,7 +1853,7 @@ function Invoke-RemoteDesktopServer
 
         [int] $ImageQuality = 100,
 
-        [switch] $DisableClipboard
+        [ClipboardMode] $Clipboard
     )
 
 
@@ -1969,7 +1981,8 @@ function Invoke-RemoteDesktopServer
 
                 # Create Runspace #2 for Incoming Events.
                 $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
-                    Reader = $clientEvents.Reader                 
+                    Reader = $clientEvents.Reader   
+                    Clipboard = $Clipboard              
                 }
 
                 $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)                  
@@ -1978,7 +1991,7 @@ function Invoke-RemoteDesktopServer
                 # Create Runspace #3 for Outgoing Events
                 $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
                     Writer = $clientEvents.Writer
-                    SynchronizeClipboard = -not $DisableClipboard
+                    Clipboard = $Clipboard
                 }
 
                 $newRunspace = (New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param)                  

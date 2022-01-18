@@ -67,6 +67,13 @@ $global:EphemeralTrustedServers = @()
 $global:LocalStoragePath = "HKCU:\SOFTWARE\PowerRemoteDesktop_Viewer"
 $global:LocalStoragePath_TrustedServers = -join($global:LocalStoragePath, "\TrustedServers")
 
+enum ClipboardMode {
+    Disabled = 1
+    Receive = 2
+    Send = 3
+    Both = 4
+}
+
 function Write-Banner 
 {
     <#
@@ -1152,6 +1159,9 @@ $global:IngressEventScriptBlock = {
 
             "ClipboardUpdated"
             {
+                if ($Param.Clipboard -eq "Disabled" -or $Param.Clipboard -eq "Send")
+                { continue }
+
                 if (-not ($aEvent.PSobject.Properties.name -match "Text"))
                 { continue } 
                 
@@ -1226,7 +1236,7 @@ $global:EgressEventScriptBlock = {
             {
                 $eventTriggered = $false
 
-                if ($Param.SynchronizeClipboard)
+                if ($Param.Clipboard -eq "Both" -or $Param.Clipboard -eq "Send")
                 {
                     # IDEA: Check for existing clipboard change event or implement a custom clipboard
                     # change detector using "WM_CLIPBOARDUPDATE" for example (WITHOUT INLINE C#)
@@ -1401,9 +1411,12 @@ function Invoke-RemoteDesktopViewer
         .PARAMETER DisableVerbosity
             Disable verbosity (not recommended)  
             
-        .PARAMETER DisableClipboard
-            This option disable Clipboard synchronization with remote peer. By default Clipboard synchronization
-            is enabled and will synchronize only if both Viewer and Server have Clipboard synchronization enabled.
+        .PARAMETER Clipboard
+            Define clipboard synchronization rules:
+                - "Disabled": Completely disable clipboard synchronization.
+                - "Receive": Update local clipboard with remote clipboard only.
+                - "Send": Send local clipboard to remote peer.
+                - "Both": Clipboards are fully synchronized between Viewer and Server.
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
@@ -1421,7 +1434,7 @@ function Invoke-RemoteDesktopViewer
         [String] $Password,                
 
         [switch] $DisableVerbosity,
-        [switch] $DisableClipboard
+        [ClipboardMode] $Clipboard = "Both"
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1819,6 +1832,7 @@ function Invoke-RemoteDesktopViewer
             $param = New-Object -TypeName PSCustomObject -Property @{
                 Client = $session.ClientEvents
                 VirtualDesktopSyncHash = $virtualDesktopSyncHash
+                Clipboard = $Clipboard
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)  
@@ -1829,7 +1843,7 @@ function Invoke-RemoteDesktopViewer
 
             $param = New-Object -TypeName PSCustomObject -Property @{                
                 OutputEventSyncHash = $outputEventSyncHash
-                SynchronizeClipboard = -not $DisableClipboard
+                Clipboard = $Clipboard
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param)  
