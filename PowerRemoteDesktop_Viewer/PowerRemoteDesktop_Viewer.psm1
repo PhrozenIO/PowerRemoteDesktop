@@ -53,7 +53,7 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
+$global:PowerRemoteDesktopVersion = "1.0.5.beta.6"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host

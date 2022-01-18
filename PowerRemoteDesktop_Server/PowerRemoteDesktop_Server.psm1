@@ -54,7 +54,7 @@ Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();[DllImport("User32.dll")] public static extern int LoadCursorA(int hInstance, int lpCursorName);[DllImport("User32.dll")] public static extern bool GetCursorInfo(IntPtr pci);' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
+$global:PowerRemoteDesktopVersion = "1.0.5.beta.6"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -1438,7 +1438,7 @@ $global:IngressEventScriptBlock = {
             ([InputEvent]::MouseWheel) {
                 if ($Param.ViewOnly)              
                 { continue }
-                
+
                 [W.U32]::mouse_event([int][MouseFlags]::MOUSEEVENTF_WHEEL, 0, 0, $aEvent.Delta, 0);
 
                 break
