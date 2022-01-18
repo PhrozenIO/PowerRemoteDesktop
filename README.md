@@ -156,12 +156,16 @@ Call `Invoke-RemoteDesktopViewer`
 
 Supported options:
 
-* `ServerAddress`: Remote Server Address.
-* `ServerPort`: Remote Server Port.
-* `DisableInputControl`: If set to $true, this option disable control events on form (Mouse Clicks, Moves and Keyboard). This option is generally to true during development when connecting to local machine to avoid funny things.
-* `Password`: Password used during server authentication.
-* `DisableVerbosity`: Disable verbosity (not recommended)
-* `TLSv1_3`: Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
+* `ServerAddress` (Default: `127.0.0.1`): Remote server host/address.
+* `ServerPort` (Default: `2801`): Remote server port.
+* `Password` (Mandatory): Password used for server authentication.
+* `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
+* `TLSv1_3` (Default: None): If this switch is present, viewer will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
+* `Clipboard` (Default: `Both`): Define clipboard synchronization rules:
+    * `Disabled`: Completely disable clipboard synchronization.
+    * `Receive`: Update local clipboard with remote clipboard only.
+    * `Send`: Send local clipboard to remote peer.
+    * `Both`: Clipboards are fully synchronized between Viewer and Server.
 
 #### Example
 
@@ -175,15 +179,26 @@ Call `Invoke-RemoteDesktopServer`
 
 Supported options:
 
-* `ListenAddress`: Define in which interface to listen for new viewer.
-* `ListenPort`: Define in which port to listen for new viewer.
-* `Password`: Define password used during authentication process.
-* `CertificateFile`: A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
-* `EncodedCertificate`: A valid X509 Certificate (With Private Key) encoded as a Base64 String.
-* `TransportMode`: (Raw or Base64) Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep the Base64 transport method as an alternative.
-* `TLSv1_3`: Define whether or not TLS v1.3 must be used for communication with Viewer.
-* `DisableVerbosity`: Disable verbosity (not recommended)
-* `ImageQuality`: JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.      
+* `ListenAddress` (Default: `0.0.0.0`): Define in which interface to listen for new viewer.
+    * `0.0.0.0` : All interfaces
+    * `127.0.0.1`: Localhost interface
+    * `x.x.x.x`: Specific interface (Replace `x` with a valid network address)
+* `ListenPort` (Default: `2801`): Define in which port to listen for new viewer.
+* `Password` (**Mandatory**): Define password used during authentication process.
+* `CertificateFile` (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
+* `EncodedCertificate` (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
+* `TransportMode`(Default: `Raw`): Define which method to use to transfer streams.
+    * `Raw`: Transfer streams as raw bytes (recommended)
+    * `Base64`: Transfer streams as base64 encoded string
+* `TLSv1_3` (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
+* `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
+* `ImageQuality` (Default: `100`): JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.      
+* `Clipboard` (Default: `Both`): Define clipboard synchronization rules:
+    * `Disabled`: Completely disable clipboard synchronization.
+    * `Receive`: Update local clipboard with remote clipboard only.
+    * `Send`: Send local clipboard to remote peer.
+    * `Both`: Clipboards are fully synchronized between Viewer and Server.
+* `OnlyView` (Default: None): If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. Useful for view session only.
 
 If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
 
