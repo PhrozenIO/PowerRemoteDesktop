@@ -10,7 +10,7 @@
 
 It doesn't rely on any existing Remote Desktop Application or Protocol to function. A serious advantage of this application is its nature (PowerShell) and its ease of use and installation.
 
-This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows Terminal (cmd).
+This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows command-line interpreter (cmd).
 
 Tested on:
 
@@ -19,18 +19,23 @@ Tested on:
 
 ## Features
 
-* Captures Remote Desktop Image with support of HDPI.
-* Supports Mouse Click (Left, Right, Middle), Mouse Moves and Mouse Wheel.
-* Supports Keystrokes Simulation (Sending remote key strokes) and few useful shortcuts.
-* Traffic is encrypted by default using TLSv1.2 and optionnally using TLSv1.3 (TLS 1.3 might not be possible on older systems).
-* Challenge-Based Password Authentication to protect access to server.
-* Support custom SSL/TLS Certificate (File or Encoded in base64). If not specified, a default one is generated and installed on local machine (requires Administrator privileges)
+https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b22c-a58e201bfe27.mp4
+
+* Remote Desktop Streaming with support of HDPI and Scaling.
+* Remote Control: Mouse (Moves, Clicks, Wheel) and Key Strokes (Keyboard)
+* **Secure**: Network traffic is encrypted using TLSv1.2 or 1.3. Access to server is granted via a challenge-based authentication mechanism (using user defined complex password).
+* Network traffic encryption is using whether a default X509 Certificate (Requires Administrator) or your custom X509 Certificate.
+* Server certificate fingerprint validation supported and optionally persistent between sessions.
+* Clipboard text synchronization between Viewer and Server.
+* Mouse cursor icon state is synchronized between Viewer (Virtual Desktop) and Server.
+* Multi-Screen (Monitor) support. If remote computer have more than one desktop screen, you can choose which desktop screen to capture.
+* View Only mode for demonstration. You can disable remote control abilities and just show your screen to remote peer.
 
 ## What is still beta
 
-I consider this version as stable but I want to do more tests and have more feedback.
+Version 1.0.5 Beta 6 is the last beta before final version.
 
-I also want to implement few additional features before releasing the version 1.
+No more features will be added in 1.x version, just optimization and bug fix.
 
 ## Installation
 
@@ -156,12 +161,16 @@ Call `Invoke-RemoteDesktopViewer`
 
 Supported options:
 
-* `ServerAddress`: Remote Server Address.
-* `ServerPort`: Remote Server Port.
-* `DisableInputControl`: If set to $true, this option disable control events on form (Mouse Clicks, Moves and Keyboard). This option is generally to true during development when connecting to local machine to avoid funny things.
-* `Password`: Password used during server authentication.
-* `DisableVerbosity`: Disable verbosity (not recommended)
-* `TLSv1_3`: Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
+* `ServerAddress` (Default: `127.0.0.1`): Remote server host/address.
+* `ServerPort` (Default: `2801`): Remote server port.
+* `Password` (Mandatory): Password used for server authentication.
+* `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
+* `TLSv1_3` (Default: None): If this switch is present, viewer will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
+* `Clipboard` (Default: `Both`): Define clipboard synchronization rules:
+    * `Disabled`: Completely disable clipboard synchronization.
+    * `Receive`: Update local clipboard with remote clipboard only.
+    * `Send`: Send local clipboard to remote peer.
+    * `Both`: Clipboards are fully synchronized between Viewer and Server.
 
 #### Example
 
@@ -175,15 +184,26 @@ Call `Invoke-RemoteDesktopServer`
 
 Supported options:
 
-* `ListenAddress`: Define in which interface to listen for new viewer.
-* `ListenPort`: Define in which port to listen for new viewer.
-* `Password`: Define password used during authentication process.
-* `CertificateFile`: A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
-* `EncodedCertificate`: A valid X509 Certificate (With Private Key) encoded as a Base64 String.
-* `TransportMode`: (Raw or Base64) Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep the Base64 transport method as an alternative.
-* `TLSv1_3`: Define whether or not TLS v1.3 must be used for communication with Viewer.
-* `DisableVerbosity`: Disable verbosity (not recommended)
-* `ImageQuality`: JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.           
+* `ListenAddress` (Default: `0.0.0.0`): Define in which interface to listen for new viewer.
+    * `0.0.0.0` : All interfaces
+    * `127.0.0.1`: Localhost interface
+    * `x.x.x.x`: Specific interface (Replace `x` with a valid network address)
+* `ListenPort` (Default: `2801`): Define in which port to listen for new viewer.
+* `Password` (**Mandatory**): Define password used during authentication process.
+* `CertificateFile` (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
+* `EncodedCertificate` (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
+* `TransportMode`(Default: `Raw`): Define which method to use to transfer streams.
+    * `Raw`: Transfer streams as raw bytes (recommended)
+    * `Base64`: Transfer streams as base64 encoded string
+* `TLSv1_3` (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
+* `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
+* `ImageQuality` (Default: `100`): JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.      
+* `Clipboard` (Default: `Both`): Define clipboard synchronization rules:
+    * `Disabled`: Completely disable clipboard synchronization.
+    * `Receive`: Update local clipboard with remote clipboard only.
+    * `Send`: Send local clipboard to remote peer.
+    * `Both`: Clipboards are fully synchronized between Viewer and Server.
+* `ViewOnly` (Default: None): If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. Useful for view session only.
 
 If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
 
@@ -279,13 +299,19 @@ Detail                           Fingerprint
 
 ![Server Fingerprint Validation](Assets/server-fingerprint-validation.png)
 
+### 18 January 2022 (1.0.5 Beta 6)
+
+* Multiple code improvements to support incoming / outgoing events.
+* Global cursor state synchronization implemented (Now virtual desktop mouse cursor is the same as remote server).
+* Password Generator algorithm fixed.
+* Virtual keyboard `]` and `)` correctly sent and interpreted.
+* Clipboard synchronization Viewer <-> Server added.
+* Server support a new option to only show desktop (Mouse moves, clicks, wheel and keyboard control is disabled in this mode).
+
 ### List of ideas and TODO
 
 * 🟢 Support Password Protected external Certificates.
-* 🟢 Mutual Authentication for SSL/TLS (Client Certificate).        
-* 🟢 Synchronize Cursor State.                
-* 🟢 Synchronize Clipboard. 
-* 🟠 Keep-Alive system to implement Read / Write Timeout.
+* 🟢 Mutual Authentication for SSL/TLS (Client Certificate).                     
 * 🟠 Listen for local/remote screen resolution update event.
 * 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
 
@@ -310,3 +336,7 @@ Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre
 cannot be held liable for the availability of, or the content located on or through it.
 Plus, any losses or damages occurred from using these contents or the internet
 generally.
+
+
+https://user-images.githubusercontent.com/2520298/150001826-fde96ce9-6ad8-46e4-9d13-a2c4e3e77f44.mp4
+
