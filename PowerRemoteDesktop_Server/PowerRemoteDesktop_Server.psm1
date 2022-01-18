@@ -767,7 +767,7 @@ class ClientIO {
         }
     }
 
-    [ServerSession]Hello() {
+    [ServerSession]Hello([bool] $ViewOnly) {
         <#
             .SYNOPSIS
                 Initialize a new session with remote Viewer.
@@ -786,7 +786,8 @@ class ClientIO {
 
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "TransportMode" -Value $this.TransportMode
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $session.Id
-        $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion                                
+        $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion     
+        $sessionInformation | Add-Member -MemberType NoteProperty -Name "ViewOnly" -Value $ViewOnly    
 
         Write-Verbose "Sending Session Information with Local System Information..."
 
@@ -856,6 +857,7 @@ class ServerIO {
     [bool] $TLSv1_3 = $false    
     [TransportMode] $TransportMode
     [string] $Password
+    [bool] $ViewOnly = $false
 
     [System.Net.Sockets.TcpListener] $Server = $null    
     [System.IO.StreamWriter] $Writer = $null
@@ -885,10 +887,13 @@ class ServerIO {
                 X509 Certificate used for SSL/TLS encryption tunnel.
 
             .PARAMETER TLSv1_3
-                Define whether or not SSL/TLS v1.3 must be used.
+                Define if TLS v1.3 must be used.
 
             .PARAMETER TransportMode
-                Define transport method for streams (Base64 or Raw)
+                Define stream transport method.
+
+            .PARAMETER ViewOnly
+                Define if mouse / keyboard is authorized.
         #>
 
         [string] $ListenAddress,
@@ -896,7 +901,8 @@ class ServerIO {
         [string] $Password,
         [TransportMode] $TransportMode,
         [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
-        [bool] $TLSv1_3
+        [bool] $TLSv1_3,
+        [bool] $ViewOnly
     ) {
         # Check again in current class just in case.
         if (-not (Test-PasswordComplexity -PasswordCandidate $Password))
@@ -909,6 +915,7 @@ class ServerIO {
         $this.TLSv1_3 = $TLSv1_3
         $this.Password = $Password
         $this.TransportMode = $TransportMode
+        $this.ViewOnly = $ViewOnly
 
         if (-not $Certificate)
         {
@@ -1015,7 +1022,7 @@ class ServerIO {
             else 
             {
                 # STEP 2 : Create new Session                    
-                $this.Session = $client.Hello()    
+                $this.Session = $client.Hello($this.ViewOnly)    
             }                        
         }
         catch
@@ -1344,7 +1351,10 @@ $global:IngressEventScriptBlock = {
         {
             # Keyboard Input Simulation
             ([InputEvent]::Keyboard)
-            {                    
+            {      
+                if ($Param.ViewOnly)              
+                { continue }
+
                 if (-not ($aEvent.PSobject.Properties.name -match "Keys"))
                 { break }
 
@@ -1355,6 +1365,9 @@ $global:IngressEventScriptBlock = {
             # Mouse Move & Click Simulation
             ([InputEvent]::MouseClickMove)
             {          
+                if ($Param.ViewOnly)              
+                { continue }
+
                 if (-not ($aEvent.PSobject.Properties.name -match "Type"))
                 { break }
 
@@ -1409,6 +1422,9 @@ $global:IngressEventScriptBlock = {
                     # Mouse Move
                     ([MouseState]::Move)
                     {
+                        if ($Param.ViewOnly)              
+                        { continue }
+
                         [W.U32]::SetCursorPos($aEvent.X, $aEvent.Y)
 
                         break
@@ -1420,6 +1436,9 @@ $global:IngressEventScriptBlock = {
 
             # Mouse Wheel Simulation
             ([InputEvent]::MouseWheel) {
+                if ($Param.ViewOnly)              
+                { continue }
+                
                 [W.U32]::mouse_event([int][MouseFlags]::MOUSEEVENTF_WHEEL, 0, 0, $aEvent.Delta, 0);
 
                 break
@@ -1796,6 +1815,10 @@ function Invoke-RemoteDesktopServer
                 - "Receive": Update local clipboard with remote clipboard only.
                 - "Send": Send local clipboard to remote peer.
                 - "Both": Clipboards are fully synchronized between Viewer and Server.
+
+        .PARAMETER ViewOnly (Default: None)
+            If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. 
+            Useful for view session only.
     #>
 
     param (
@@ -1808,13 +1831,11 @@ function Invoke-RemoteDesktopServer
         [string] $EncodedCertificate = "", # 2
 
         [TransportMode] $TransportMode = [TransportMode]::Raw,
-        [switch] $TLSv1_3,
-        
+        [switch] $TLSv1_3,        
         [switch] $DisableVerbosity,
-
         [int] $ImageQuality = 100,
-
-        [ClipboardMode] $Clipboard = [ClipboardMode]::Both
+        [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
+        [switch] $ViewOnly
     )
 
 
@@ -1900,7 +1921,8 @@ function Invoke-RemoteDesktopServer
             $Password,
             $TransportMode,
             $Certificate,
-            $TLSv1_3      
+            $TLSv1_3,
+            $ViewOnly  
         )        
 
         $server.Listen()        
@@ -1944,7 +1966,8 @@ function Invoke-RemoteDesktopServer
                 # Create Runspace #2 for Incoming Events.
                 $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
                     Reader = $clientEvents.Reader   
-                    Clipboard = $Clipboard              
+                    Clipboard = $Clipboard 
+                    ViewOnly = $ViewOnly          
                 }
 
                 $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)                  

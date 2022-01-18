@@ -198,7 +198,7 @@ Supported options:
     * `Receive`: Update local clipboard with remote clipboard only.
     * `Send`: Send local clipboard to remote peer.
     * `Both`: Clipboards are fully synchronized between Viewer and Server.
-* `OnlyView` (Default: None): If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. Useful for view session only.
+* `ViewOnly` (Default: None): If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. Useful for view session only.
 
 If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
 

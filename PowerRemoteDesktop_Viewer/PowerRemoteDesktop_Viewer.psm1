@@ -620,7 +620,8 @@ class ClientIO {
             (-not ($sessionInformation.PSobject.Properties.name -contains "SessionId")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "TransportMode")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "Version")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "Screens"))
+            (-not ($sessionInformation.PSobject.Properties.name -contains "Screens")) -or
+            (-not ($sessionInformation.PSobject.Properties.name -contains "ViewOnly"))
         )
         {
             throw "Invalid session information data."
@@ -632,6 +633,11 @@ class ClientIO {
             Local: ""${global:PowerRemoteDesktopVersion}""`r`n`
             Remote: ""$($sessionInformation.Version)""`r`n`
             You cannot use two different version between Viewer and Server."
+        }
+
+        if ($sessionInformation.ViewOnly)
+        {
+            Write-Host "You are only authorized to view remote desktop (Mouse / Keyboard not authorized)" -ForegroundColor Cyan
         }
 
         # Check if remote server have multiple screens
@@ -1357,11 +1363,6 @@ function Invoke-RemoteDesktopViewer
         .PARAMETER ServerPort
             Remote Server Port.
 
-        .PARAMETER DisableInputControl
-            If set, this option disables control events on form (Mouse Clicks, Moves and Keyboard)
-            This option is generally set to true during development when connecting to local machine to avoid funny
-            things.
-
         .PARAMETER SecurePassword
             SecureString Password object used to authenticate with remote server (Recommended)
 
@@ -1395,8 +1396,7 @@ function Invoke-RemoteDesktopViewer
     #>
     param (        
         [string] $ServerAddress = "127.0.0.1",
-        [int] $ServerPort = 2801,
-        [switch] $DisableInputControl,
+        [int] $ServerPort = 2801,        
         [switch] $TLSv1_3,
                            
         [SecureString] $SecurePassword,
@@ -1523,7 +1523,7 @@ function Invoke-RemoteDesktopViewer
             })
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
-            if (-not $DisableInputControl)                   
+            if (-not $session.SessionInformation.ViewOnly)                   
             {
                 enum OutputEvent {
                     Keyboard = 0x1
