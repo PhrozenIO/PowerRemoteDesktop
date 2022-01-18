@@ -573,11 +573,6 @@ function Get-LocalMachineInformation
 }
 
 class ServerSession {
-    <#
-        .SYNOPSIS
-            PowerRemoteDesktop Session Class.
-    #>    
-
     [string] $Id = ""
     [string] $TiedAddress = ""
     [string] $Screen = ""
@@ -601,19 +596,12 @@ class ServerSession {
     }
 }
 
-class ClientIO {
-    <#
-        .SYNOPSIS
-            Extended version of TcpClient that automatically creates and releases
-            required streams with other useful methods.
-
-            Supports SSL/TLS.
-    #>    
+class ClientIO {  
     [System.Net.Sockets.TcpClient] $Client = $null
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null
     [System.Net.Security.SslStream] $SSLStream = $null  
-    [TransportMode] $TransportMode = "Raw"  
+    [TransportMode] $TransportMode 
 
 
     ClientIO(
@@ -863,17 +851,10 @@ class ClientIO {
 }
 
 class ServerIO {
-    <#
-        .SYNOPSIS
-            Extended version of TcpListener.
-
-            Supports SSL/TLS.
-    #>
-
     [string] $ListenAddress = "127.0.0.1"
     [int] $ListenPort = 2801
     [bool] $TLSv1_3 = $false    
-    [TransportMode] $TransportMode = "Raw"
+    [TransportMode] $TransportMode
     [string] $Password
 
     [System.Net.Sockets.TcpListener] $Server = $null    
@@ -1071,22 +1052,11 @@ class ServerIO {
 }
 
 $global:DesktopStreamScriptBlock = {
-    <#
-        .SYNOPSIS
-            Threaded code block to send updates of local desktop to remote peer.
-
-            This code is expected to be run inside a new PowerShell Runspace.
-
-        .PARAMETER Param.Client
-            A ClientIO Object containing an active connection. This is where, desktop updates will be
-            sent over network.     
-
-        .PARAMETER Param.ImageQuality
-            Desired desktop image compression level (0..100).
-
-        .PARAMETER Param.Screen
-            An object destribing which screen (desktop monitor) to capture.
-    #>     
+    
+    enum TransportMode {
+        Raw = 1
+        Base64 = 2
+    }
 
     function Get-DesktopImage {	
         <#
@@ -1188,10 +1158,10 @@ $global:DesktopStreamScriptBlock = {
                     $imageStream.position = 0 
                     try 
                     {
-                        switch ($Param.Client.TransportMode)
+                        switch ([TransportMode] $Param.Client.TransportMode)
                         {
-                            "Raw"
-                            {
+                            ([TransportMode]::Raw)
+                            {                                
                                 $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
 
                                 $totalBytesSent = 0
@@ -1222,8 +1192,8 @@ $global:DesktopStreamScriptBlock = {
                                 break
                             }
 
-                            "Base64"
-                            {
+                            ([TransportMode]::Base64)
+                            {                                
                                 $Param.Client.Writer.WriteLine(
                                     [System.Convert]::ToBase64String($imageStream.ToArray())
                                 )
@@ -1270,15 +1240,6 @@ $global:DesktopStreamScriptBlock = {
 }
 
 $global:IngressEventScriptBlock = {   
-    <#
-        .SYNOPSIS
-            Threaded code block to receive remote orders (Ex: Keyboard Strokes, Mouse Clicks, Moves etc...)
-
-            This code is expected to be run inside a new PowerShell Runspace.
-
-        .PARAMETER Param.Client
-            A ClientIO Object with an established connection to remote peer.
-    #>
 
     Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);[DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);' -Name U32 -Namespace W;
 
@@ -1309,6 +1270,13 @@ $global:IngressEventScriptBlock = {
         Up = 0x1
         Down = 0x2
         Move = 0x3
+    }
+
+    enum ClipboardMode {
+        Disabled = 1
+        Receive = 2
+        Send = 3
+        Both = 4
     }
 
     class KeyboardSim {
@@ -1375,7 +1343,7 @@ $global:IngressEventScriptBlock = {
         switch ([InputEvent] $aEvent.Id)
         {
             # Keyboard Input Simulation
-            "Keyboard"
+            ([InputEvent]::Keyboard)
             {                    
                 if (-not ($aEvent.PSobject.Properties.name -match "Keys"))
                 { break }
@@ -1385,7 +1353,7 @@ $global:IngressEventScriptBlock = {
             }
 
             # Mouse Move & Click Simulation
-            "MouseClickMove"
+            ([InputEvent]::MouseClickMove)
             {          
                 if (-not ($aEvent.PSobject.Properties.name -match "Type"))
                 { break }
@@ -1393,11 +1361,11 @@ $global:IngressEventScriptBlock = {
                 switch ([MouseState] $aEvent.Type)
                 {
                     # Mouse Down/Up
-                    {($_ -eq "Down") -or ($_ -eq "Up")}
+                    {($_ -eq ([MouseState]::Down)) -or ($_ -eq ([MouseState]::Up))}
                     {
                         [W.U32]::SetCursorPos($aEvent.X, $aEvent.Y)   
 
-                        $down = ($_ -eq "Down")
+                        $down = ($_ -eq ([MouseState]::Down))
 
                         $mouseCode = [int][MouseFlags]::MOUSEEVENTF_LEFTDOWN
                         if (-not $down)
@@ -1439,7 +1407,7 @@ $global:IngressEventScriptBlock = {
                     }
 
                     # Mouse Move
-                    "Move"
+                    ([MouseState]::Move)
                     {
                         [W.U32]::SetCursorPos($aEvent.X, $aEvent.Y)
 
@@ -1451,16 +1419,16 @@ $global:IngressEventScriptBlock = {
             }        
 
             # Mouse Wheel Simulation
-            "MouseWheel" {
+            ([InputEvent]::MouseWheel) {
                 [W.U32]::mouse_event([int][MouseFlags]::MOUSEEVENTF_WHEEL, 0, 0, $aEvent.Delta, 0);
 
                 break
             }    
 
             # Clipboard Update
-            "ClipboardUpdated"
+            ([InputEvent]::ClipboardUpdated)
             {
-                if ($Param.Clipboard -eq "Disabled" -or $Param.Clipboard -eq "Send")
+                if ($Param.Clipboard -eq ([ClipboardMode]::Disabled) -or $Param.Clipboard -eq ([ClipboardMode]::Send))
                 { continue }
 
                 if (-not ($aEvent.PSobject.Properties.name -match "Text"))
@@ -1475,20 +1443,6 @@ $global:IngressEventScriptBlock = {
 }
 
 $global:EgressEventScriptBlock = {
-    <#
-        .SYNOPSIS
-            This script block is used to send events to remote peer.
-
-            This code is expected to be run inside a new PowerShell Runspace.
-
-        .DESCRIPTION
-            Supported Events:
-                - Global Mouse Cursor State
-
-            Future Events to Support:
-                - Clipboard
-                - Receive File
-    #>
 
     enum CursorType {
         IDC_APPSTARTING = 32650
@@ -1513,6 +1467,13 @@ $global:EgressEventScriptBlock = {
         KeepAlive = 0x1
         MouseCursorUpdated = 0x2  
         ClipboardUpdated = 0x3     
+    }
+
+    enum ClipboardMode {
+        Disabled = 1
+        Receive = 2
+        Send = 3
+        Both = 4
     }
 
     function Initialize-Cursors
@@ -1659,7 +1620,7 @@ $global:EgressEventScriptBlock = {
             {
                 $eventTriggered = $false
 
-                if ($Param.Clipboard -eq "Both" -or $Param.Clipboard -eq "Send")
+                if ($Param.Clipboard -eq ([ClipboardMode]::Both) -or $Param.Clipboard -eq ([ClipboardMode]::Send))
                 {
                     # IDEA: Check for existing clipboard change event or implement a custom clipboard
                     # change detector using "WM_CLIPBOARDUPDATE" for example (WITHOUT INLINE C#)
@@ -1672,7 +1633,7 @@ $global:EgressEventScriptBlock = {
                             Text = $currentClipboard
                         } 
 
-                        if (-not (Send-Event -AEvent "ClipboardUpdated" -Data $data))
+                        if (-not (Send-Event -AEvent ([OutputEvent]::ClipboardUpdated) -Data $data))
                         { break }
 
                         $HostSyncHash.ClipboardText = $currentClipboard
@@ -1684,7 +1645,7 @@ $global:EgressEventScriptBlock = {
                 # Send a Keep-Alive if during this second iteration nothing happened.
                 if (-not $eventTriggered)
                 {
-                    if (-not (Send-Event -AEvent "KeepAlive"))
+                    if (-not (Send-Event -AEvent ([OutputEvent]::KeepAlive)))
                     { break }
                 }
             }
@@ -1705,7 +1666,7 @@ $global:EgressEventScriptBlock = {
                 Cursor = $cursorTypeName
             }             
 
-            if (-not (Send-Event -AEvent "MouseCursorUpdated" -Data $data))
+            if (-not (Send-Event -AEvent ([OutputEvent]::MouseCursorUpdated) -Data $data))
             { break }
 
             $oldCursor = $currentCursor
@@ -1846,14 +1807,14 @@ function Invoke-RemoteDesktopServer
         # Or
         [string] $EncodedCertificate = "", # 2
 
-        [TransportMode] $TransportMode = "Raw",
+        [TransportMode] $TransportMode = [TransportMode]::Raw,
         [switch] $TLSv1_3,
         
         [switch] $DisableVerbosity,
 
         [int] $ImageQuality = 100,
 
-        [ClipboardMode] $Clipboard
+        [ClipboardMode] $Clipboard = [ClipboardMode]::Both
     )
 
 
@@ -1931,6 +1892,7 @@ function Invoke-RemoteDesktopServer
             }
         }
 
+        Write-Verbose $TransportMode
         # Create new server and listen
         $server = [ServerIO]::New(
             $ListenAddress,

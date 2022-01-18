@@ -74,6 +74,11 @@ enum ClipboardMode {
     Both = 4
 }
 
+enum TransportMode {
+    Raw = 1
+    Base64 = 2
+}
+
 function Write-Banner 
 {
     <#
@@ -355,14 +360,6 @@ function Resolve-AuthenticationChallenge
 }
 
 class ClientIO {
-    <#
-        .SYNOPSIS
-            Extended version of TcpClient that automatically creates and releases
-            required streams with other useful methods.
-
-            Supports SSL/TLS.
-    #>
-
     [string] $RemoteAddress
     [int] $RemotePort
     [bool] $TLSv1_3
@@ -744,14 +741,6 @@ class ClientIO {
 
 class ViewerSession
 {
-    <#
-        .SYNOPSIS
-            Viewer Session Class
-
-        .DESCRIPTION
-            Contains methods to handle from A to Z the Power Remote Desktop Protocol.
-    #>
-
     [PSCustomObject] $SessionInformation = $null
     [string] $ServerAddress = "127.0.0.1"
     [string] $ServerPort = 2801
@@ -885,32 +874,7 @@ class ViewerSession
 }
 
 $global:VirtualDesktopUpdaterScriptBlock = {   
-    <#
-        .SYNOPSIS
-            Threaded code block to receive updates of remote desktop and update Virtual Desktop Form.
-
-            This code is expected to be run inside a new PowerShell Runspace.        
-
-        .PARAMETER Param.Client
-            A ClientIO Class instance for handling desktop updates.
-
-        .PARAMETER Param.RequireResize
-            Tell if desktop image needs to be resized to fit viewer screen constrainsts.
-
-        .PARAMETER Param.VirtualDesktopWidth
-            The integer value representing remote screen width.
-
-        .PARAMETER Param.VirtualDesktopHeight
-            The integer value representing remote screen height.
-
-        .PARAMETER Param.VirtualDesktopSyncHash
-            Synchronized Hashtable containing objects to "safe-thread"       
-
-        .PARAMETER Param.TransportMode
-            Define desktop image transport mode: Raw or Base64. This value is defined by server following
-            its options.
-    #>
-
+    
     enum TransportMode {
         Raw = 1
         Base64 = 2
@@ -984,8 +948,8 @@ $global:VirtualDesktopUpdaterScriptBlock = {
             {      
                 switch ([TransportMode] $Param.TransportMode)         
                 {
-                    "Raw"
-                    {                         
+                    ([TransportMode]::Raw)
+                    {                        
                         $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
 
                         $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
@@ -1021,8 +985,8 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                         } until ($totalBytesRead -eq $totalBufferSize)
                     }
 
-                    "Base64"
-                    {
+                    ([TransportMode]::Base64)
+                    {                        
                         [byte[]] $buffer = [System.Convert]::FromBase64String(($Param.Client.Reader.ReadLine()))
 
                         $stream.Write($buffer, 0, $buffer.Length)   
@@ -1062,15 +1026,6 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 }
 
 $global:IngressEventScriptBlock = {
-    <#
-        .SYNOPSIS
-            Threaded code block to receive remote events.
-
-            This code is expected to be run inside a new PowerShell Runspace.
-
-        .PARAMETER Param.Client
-            A ClientIO Object with an established connection to remote server.        
-    #>
 
     enum CursorType {
         IDC_APPSTARTING
@@ -1097,6 +1052,13 @@ $global:IngressEventScriptBlock = {
         ClipboardUpdated = 0x3         
     }    
 
+    enum ClipboardMode {
+        Disabled = 1
+        Receive = 2
+        Send = 3
+        Both = 4
+    }
+
     while ($true)                    
     {        
         try
@@ -1119,7 +1081,7 @@ $global:IngressEventScriptBlock = {
         switch ([InputEvent] $aEvent.Id)
         {        
             # Remote Global Mouse Cursor State Changed (Icon)
-            "MouseCursorUpdated"
+            ([InputEvent]::MouseCursorUpdated)
             {                
                 if (-not ($aEvent.PSobject.Properties.name -match "Cursor"))
                 { continue } 
@@ -1128,20 +1090,20 @@ $global:IngressEventScriptBlock = {
 
                 switch ([CursorType] $aEvent.Cursor)
                 {                    
-                    "IDC_APPSTARTING" { $cursor = [System.Windows.Forms.Cursors]::AppStarting }                    
-                    "IDC_CROSS" { $cursor = [System.Windows.Forms.Cursors]::Cross }
-                    "IDC_HAND" { $cursor = [System.Windows.Forms.Cursors]::Hand }
-                    "IDC_HELP" { $cursor = [System.Windows.Forms.Cursors]::Help }
-                    "IDC_IBEAM" { $cursor = [System.Windows.Forms.Cursors]::IBeam }                    
-                    "IDC_NO" { $cursor = [System.Windows.Forms.Cursors]::No }                    
-                    "IDC_SIZENESW" { $cursor = [System.Windows.Forms.Cursors]::SizeNESW }
-                    "IDC_SIZENS" { $cursor = [System.Windows.Forms.Cursors]::SizeNS }
-                    "IDC_SIZENWSE" { $cursor = [System.Windows.Forms.Cursors]::SizeNWSE }
-                    "IDC_SIZEWE" { $cursor = [System.Windows.Forms.Cursors]::SizeWE }
-                    "IDC_UPARROW" { $cursor = [System.Windows.Forms.Cursors]::UpArrow }
-                    "IDC_WAIT" { $cursor = [System.Windows.Forms.Cursors]::WaitCursor }
+                    ([CursorType]::IDC_APPSTARTING) { $cursor = [System.Windows.Forms.Cursors]::AppStarting }                    
+                    ([CursorType]::IDC_CROSS) { $cursor = [System.Windows.Forms.Cursors]::Cross }
+                    ([CursorType]::IDC_HAND) { $cursor = [System.Windows.Forms.Cursors]::Hand }
+                    ([CursorType]::IDC_HELP) { $cursor = [System.Windows.Forms.Cursors]::Help }
+                    ([CursorType]::IDC_IBEAM) { $cursor = [System.Windows.Forms.Cursors]::IBeam }                    
+                    ([CursorType]::IDC_NO) { $cursor = [System.Windows.Forms.Cursors]::No }                    
+                    ([CursorType]::IDC_SIZENESW) { $cursor = [System.Windows.Forms.Cursors]::SizeNESW }
+                    ([CursorType]::IDC_SIZENS) { $cursor = [System.Windows.Forms.Cursors]::SizeNS }
+                    ([CursorType]::IDC_SIZENWSE) { $cursor = [System.Windows.Forms.Cursors]::SizeNWSE }
+                    ([CursorType]::IDC_SIZEWE) { $cursor = [System.Windows.Forms.Cursors]::SizeWE }
+                    ([CursorType]::IDC_UPARROW) { $cursor = [System.Windows.Forms.Cursors]::UpArrow }
+                    ([CursorType]::IDC_WAIT) { $cursor = [System.Windows.Forms.Cursors]::WaitCursor }
 
-                     {($_ -eq "IDC_SIZE") -or ($_ -eq "IDC_SIZEALL")}
+                     {($_ -eq ([CursorType]::IDC_SIZE)) -or ($_ -eq [CursorType]::(IDC_SIZEALL))}
                      {
                         $cursor = [System.Windows.Forms.Cursors]::SizeAll 
                     }
@@ -1157,9 +1119,9 @@ $global:IngressEventScriptBlock = {
                 break
             }
 
-            "ClipboardUpdated"
+            ([InputEvent]::ClipboardUpdated)
             {
-                if ($Param.Clipboard -eq "Disabled" -or $Param.Clipboard -eq "Send")
+                if ($Param.Clipboard -eq ([ClipboardMode]::Disabled) -or $Param.Clipboard -eq ([ClipboardMode]::Send))
                 { continue }
 
                 if (-not ($aEvent.PSobject.Properties.name -match "Text"))
@@ -1180,6 +1142,13 @@ $global:EgressEventScriptBlock = {
         KeepAlive = 0x4        
         ClipboardUpdated = 0x5
     }  
+
+    enum ClipboardMode {
+        Disabled = 1
+        Receive = 2
+        Send = 3
+        Both = 4
+    }
 
     function Send-Event
     {
@@ -1236,7 +1205,7 @@ $global:EgressEventScriptBlock = {
             {
                 $eventTriggered = $false
 
-                if ($Param.Clipboard -eq "Both" -or $Param.Clipboard -eq "Send")
+                if ($Param.Clipboard -eq ([ClipboardMode]::Both) -or $Param.Clipboard -eq ([ClipboardMode]::Send))
                 {
                     # IDEA: Check for existing clipboard change event or implement a custom clipboard
                     # change detector using "WM_CLIPBOARDUPDATE" for example (WITHOUT INLINE C#)
@@ -1249,7 +1218,7 @@ $global:EgressEventScriptBlock = {
                             Text = $currentClipboard
                         } 
 
-                        if (-not (Send-Event -AEvent "ClipboardUpdated" -Data $data))
+                        if (-not (Send-Event -AEvent ([OutputEvent]::ClipboardUpdated) -Data $data))
                         { break }
 
                         $HostSyncHash.ClipboardText = $currentClipboard
@@ -1261,7 +1230,7 @@ $global:EgressEventScriptBlock = {
                 # Send a Keep-Alive if during this second iteration nothing happened.
                 if (-not $eventTriggered)
                 {
-                    if (-not (Send-Event -AEvent "KeepAlive"))
+                    if (-not (Send-Event -AEvent ([OutputEvent]::KeepAlive)))
                     { break }
                 }
             }
@@ -1434,7 +1403,7 @@ function Invoke-RemoteDesktopViewer
         [String] $Password,                
 
         [switch] $DisableVerbosity,
-        [ClipboardMode] $Clipboard = "Both"
+        [ClipboardMode] $Clipboard = [ClipboardMode]::Both
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1604,11 +1573,11 @@ function Invoke-RemoteDesktopViewer
                     )
 
                     return New-Object PSCustomObject -Property @{
-                        Id = [int][OutputEvent]::MouseClickMove
+                        Id = [OutputEvent]::MouseClickMove
                         X = $X
                         Y = $Y
                         Button = $Button
-                        Type = [int]$Type 
+                        Type = $Type 
                     }
                 }
 
@@ -1632,7 +1601,7 @@ function Invoke-RemoteDesktopViewer
                     )
 
                     return New-Object PSCustomObject -Property @{
-                        Id = [int][OutputEvent]::Keyboard
+                        Id = [OutputEvent]::Keyboard
                         Keys = $Keys
                     }
                 }
@@ -1785,26 +1754,26 @@ function Invoke-RemoteDesktopViewer
 
                 $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseDown(
                     {                         
-                        Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Down"
+                        Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type ([MouseState]::Down)
                     }
                 )
 
                 $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseUp(
                     { 
-                        Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Up"
+                        Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type ([MouseState]::Up)
                     }
                 )
 
                 $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseMove(
                     { 
-                        Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Move"
+                        Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type ([MouseState]::Move)
                     }
                 )          
 
                 $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseWheel(
                     {
                         $aEvent = New-Object PSCustomObject -Property @{
-                            Id = [int][OutputEvent]::MouseWheel
+                            Id = [OutputEvent]::MouseWheel
                             Delta = $_.Delta
                         }
 
@@ -1821,7 +1790,7 @@ function Invoke-RemoteDesktopViewer
                 VirtualDesktopWidth = $virtualDesktopWidth 
                 VirtualDesktopHeight = $virtualDesktopHeight
                 RequireResize = $requireResize
-                TransportMode = $session.SessionInformation.TransportMode                
+                TransportMode = [TransportMode] $session.SessionInformation.TransportMode                
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  
