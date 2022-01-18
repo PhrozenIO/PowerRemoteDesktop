@@ -19,6 +19,8 @@ Tested on:
 
 ## Features
 
+https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b22c-a58e201bfe27.mp4
+
 * Remote Desktop Streaming with support of HDPI and Scaling.
 * Remote Control: Mouse (Moves, Clicks, Wheel) and Key Strokes (Keyboard)
 * **Secure**: Network traffic is encrypted using TLSv1.2 or 1.3. Access to server is granted via a challenge-based authentication mechanism (using user defined complex password).
@@ -334,3 +336,7 @@ Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre
 cannot be held liable for the availability of, or the content located on or through it.
 Plus, any losses or damages occurred from using these contents or the internet
 generally.
+
+
+https://user-images.githubusercontent.com/2520298/150001826-fde96ce9-6ad8-46e4-9d13-a2c4e3e77f44.mp4
+
