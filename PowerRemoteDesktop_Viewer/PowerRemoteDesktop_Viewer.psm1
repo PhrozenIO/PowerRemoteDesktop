@@ -347,290 +347,6 @@ function Resolve-AuthenticationChallenge
     }
 }
 
-$global:VirtualDesktopUpdaterScriptBlock = {   
-    <#
-        .SYNOPSIS
-            Threaded code block to receive updates of remote desktop and update Virtual Desktop Form.
-
-            This code is expected to be run inside a new PowerShell Runspace.        
-
-        .PARAMETER Param.Client
-            A ClientIO Class instance for handling desktop updates.
-
-        .PARAMETER Param.RequireResize
-            Tell if desktop image needs to be resized to fit viewer screen constrainsts.
-
-        .PARAMETER Param.VirtualDesktopWidth
-            The integer value representing remote screen width.
-
-        .PARAMETER Param.VirtualDesktopHeight
-            The integer value representing remote screen height.
-
-        .PARAMETER Param.SyncHash
-            Synchronized Hashtable containing objects to "safe-thread"       
-
-        .PARAMETER Param.TransportMode
-            Define desktop image transport mode: Raw or Base64. This value is defined by server following
-            its options.
-    #>
-
-    enum TransportMode {
-        Raw = 1
-        Base64 = 2
-    }
-
-    function Invoke-SmoothResize
-    {
-        <#
-            .SYNOPSIS
-                Output a resized version of input bitmap. The resize quality is quite fair.
-                
-            .PARAMETER OriginalImage
-                Input bitmap to resize.
-
-            .PARAMETER NewWidth
-                Define the width of new bitmap version.
-
-            .PARAMETER NewHeight
-                Define the height of new bitmap version.
-
-            .EXAMPLE
-                Invoke-SmoothResize -OriginalImage $myImage -NewWidth 1920 -NewHeight 1024
-        #>
-        param (
-            [Parameter(Mandatory=$true)]
-            [System.Drawing.Bitmap] $OriginalImage,
-
-            [Parameter(Mandatory=$true)]
-            [int] $NewWidth,
-
-            [Parameter(Mandatory=$true)]
-            [int] $NewHeight
-        )
-        try
-        {    
-            $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $NewWidth, $NewHeight
-
-            $resizedImage = [System.Drawing.Graphics]::FromImage($bitmap)
-
-            $resizedImage.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $resizedImage.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-            $resizedImage.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $resizedImage.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality 
-            
-            $resizedImage.DrawImage($OriginalImage, 0, 0, $bitmap.Width, $bitmap.Height)
-
-            return $bitmap
-        }
-        finally
-        {
-            if ($OriginalImage)
-            {
-                $OriginalImage.Dispose()
-            }
-
-            if ($resizedImage)
-            {
-                $resizedImage.Dispose()
-            }
-        }
-    }
-
-    try
-    {       
-        $packetSize = 4096
-
-        while ($true)
-        {                   
-            $stream = New-Object System.IO.MemoryStream
-            try
-            {      
-                switch ([TransportMode] $Param.TransportMode)         
-                {
-                    "Raw"
-                    {                         
-                        $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
-
-                        $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
-
-                        [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
-
-                        $stream.SetLength($totalBufferSize)
-
-                        $stream.position = 0
-
-                        $totalBytesRead = 0
-
-                        $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
-                        do
-                        {
-                            $bufferSize = $totalBufferSize - $totalBytesRead
-                            if ($bufferSize -gt $packetSize)
-                            {
-                                $bufferSize = $packetSize
-                            }    
-                            else
-                            {
-                                # Save some memory operations for creating objects.
-                                # Usually, bellow code is call when last chunk is being sent.
-                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
-                            }                
-
-                            $Param.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
-
-                            $null = $stream.Write($buffer, 0, $buffer.Length)
-
-                            $totalBytesRead += $bufferSize
-                        } until ($totalBytesRead -eq $totalBufferSize)
-                    }
-
-                    "Base64"
-                    {
-                        [byte[]] $buffer = [System.Convert]::FromBase64String(($Param.Client.Reader.ReadLine()))
-
-                        $stream.Write($buffer, 0, $buffer.Length)   
-                    }
-                }                    
-
-                $stream.Position = 0                                                                
-
-                if ($Param.RequireResize)
-                {
-                    #$image = [System.Drawing.Image]::FromStream($stream)
-
-                    $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
-
-                    $Param.SyncHash.VirtualDesktop.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $Param.VirtualDesktopWidth -NewHeight $Param.VirtualDesktopHeight                   
-                }
-                else
-                {                    
-                    $Param.SyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
-                }
-            }
-            catch 
-            {               
-                break
-            }            
-            finally
-            {
-                $stream.Close()
-            }
-                
-        }
-    }
-    finally
-    {        
-        $Param.SyncHash.VirtualDesktop.Form.Close()
-    }
-}
-
-$global:IngressEventScriptBlock = {
-    <#
-        .SYNOPSIS
-            Threaded code block to receive remote events.
-
-            This code is expected to be run inside a new PowerShell Runspace.
-
-        .PARAMETER Param.Client
-            A ClientIO Object with an established connection to remote server.        
-    #>
-
-    enum CursorType {
-        IDC_APPSTARTING
-        IDC_ARROW
-        IDC_CROSS
-        IDC_HAND
-        IDC_HELP
-        IDC_IBEAM
-        IDC_ICON
-        IDC_NO
-        IDC_SIZE
-        IDC_SIZEALL
-        IDC_SIZENESW
-        IDC_SIZENS
-        IDC_SIZENWSE
-        IDC_SIZEWE
-        IDC_UPARROW
-        IDC_WAIT
-    }
-
-    enum OutputCommand {
-        KeepAlive = 0x1
-        MouseCursorUpdated = 0x2 
-        ClipboardUpdated = 0x3         
-    }    
-
-    while ($true)                    
-    {        
-        try
-        {         
-            $jsonCommand = $Param.Client.Reader.ReadLine()                        
-        }
-        catch
-        { break }        
-
-        try
-        {
-            $command = $jsonCommand | ConvertFrom-Json
-        }
-        catch
-        { continue }
-
-        if (-not ($command.PSobject.Properties.name -match "Id"))
-        { continue }           
-        
-        switch ([OutputCommand] $command.Id)
-        {        
-            # Remote Global Mouse Cursor State Changed (Icon)
-            "MouseCursorUpdated"
-            {                
-                if (-not ($command.PSobject.Properties.name -match "Cursor"))
-                { continue } 
-
-                $cursor = [System.Windows.Forms.Cursors]::Arrow
-
-                switch ([CursorType] $command.Cursor)
-                {                    
-                    "IDC_APPSTARTING" { $cursor = [System.Windows.Forms.Cursors]::AppStarting }                    
-                    "IDC_CROSS" { $cursor = [System.Windows.Forms.Cursors]::Cross }
-                    "IDC_HAND" { $cursor = [System.Windows.Forms.Cursors]::Hand }
-                    "IDC_HELP" { $cursor = [System.Windows.Forms.Cursors]::Help }
-                    "IDC_IBEAM" { $cursor = [System.Windows.Forms.Cursors]::IBeam }                    
-                    "IDC_NO" { $cursor = [System.Windows.Forms.Cursors]::No }                    
-                    "IDC_SIZENESW" { $cursor = [System.Windows.Forms.Cursors]::SizeNESW }
-                    "IDC_SIZENS" { $cursor = [System.Windows.Forms.Cursors]::SizeNS }
-                    "IDC_SIZENWSE" { $cursor = [System.Windows.Forms.Cursors]::SizeNWSE }
-                    "IDC_SIZEWE" { $cursor = [System.Windows.Forms.Cursors]::SizeWE }
-                    "IDC_UPARROW" { $cursor = [System.Windows.Forms.Cursors]::UpArrow }
-                    "IDC_WAIT" { $cursor = [System.Windows.Forms.Cursors]::WaitCursor }
-
-                     {($_ -eq "IDC_SIZE") -or ($_ -eq "IDC_SIZEALL")}
-                     {
-                        $cursor = [System.Windows.Forms.Cursors]::SizeAll 
-                    }
-                }
-
-                try 
-                {
-                    $Param.SyncHash.VirtualDesktop.Picture.Cursor = $cursor
-                }
-                catch 
-                {}
-
-                break
-            }
-
-            "ClipboardUpdated"
-            {
-                if (-not ($command.PSobject.Properties.name -match "Text"))
-                { continue } 
-                
-                Set-Clipboard -Value $command.Text
-            }
-        }
-    }    
-}
-
 class ClientIO {
     <#
         .SYNOPSIS
@@ -831,7 +547,7 @@ class ClientIO {
         Write-Verbose "Candidate: ""${candidate}"""
         Write-Verbose "Solution: ""${challengeSolution}"""
         Write-Verbose "---"            
-        
+
         $this.Writer.WriteLine($challengeSolution)
 
         $result = $this.Reader.ReadLine()
@@ -1159,6 +875,290 @@ class ViewerSession
         Write-Verbose "Session closed."
     }
 
+}
+
+$global:VirtualDesktopUpdaterScriptBlock = {   
+    <#
+        .SYNOPSIS
+            Threaded code block to receive updates of remote desktop and update Virtual Desktop Form.
+
+            This code is expected to be run inside a new PowerShell Runspace.        
+
+        .PARAMETER Param.Client
+            A ClientIO Class instance for handling desktop updates.
+
+        .PARAMETER Param.RequireResize
+            Tell if desktop image needs to be resized to fit viewer screen constrainsts.
+
+        .PARAMETER Param.VirtualDesktopWidth
+            The integer value representing remote screen width.
+
+        .PARAMETER Param.VirtualDesktopHeight
+            The integer value representing remote screen height.
+
+        .PARAMETER Param.SyncHash
+            Synchronized Hashtable containing objects to "safe-thread"       
+
+        .PARAMETER Param.TransportMode
+            Define desktop image transport mode: Raw or Base64. This value is defined by server following
+            its options.
+    #>
+
+    enum TransportMode {
+        Raw = 1
+        Base64 = 2
+    }
+
+    function Invoke-SmoothResize
+    {
+        <#
+            .SYNOPSIS
+                Output a resized version of input bitmap. The resize quality is quite fair.
+                
+            .PARAMETER OriginalImage
+                Input bitmap to resize.
+
+            .PARAMETER NewWidth
+                Define the width of new bitmap version.
+
+            .PARAMETER NewHeight
+                Define the height of new bitmap version.
+
+            .EXAMPLE
+                Invoke-SmoothResize -OriginalImage $myImage -NewWidth 1920 -NewHeight 1024
+        #>
+        param (
+            [Parameter(Mandatory=$true)]
+            [System.Drawing.Bitmap] $OriginalImage,
+
+            [Parameter(Mandatory=$true)]
+            [int] $NewWidth,
+
+            [Parameter(Mandatory=$true)]
+            [int] $NewHeight
+        )
+        try
+        {    
+            $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $NewWidth, $NewHeight
+
+            $resizedImage = [System.Drawing.Graphics]::FromImage($bitmap)
+
+            $resizedImage.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+            $resizedImage.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            $resizedImage.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $resizedImage.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality 
+            
+            $resizedImage.DrawImage($OriginalImage, 0, 0, $bitmap.Width, $bitmap.Height)
+
+            return $bitmap
+        }
+        finally
+        {
+            if ($OriginalImage)
+            {
+                $OriginalImage.Dispose()
+            }
+
+            if ($resizedImage)
+            {
+                $resizedImage.Dispose()
+            }
+        }
+    }
+
+    try
+    {       
+        $packetSize = 4096
+
+        while ($true)
+        {                   
+            $stream = New-Object System.IO.MemoryStream
+            try
+            {      
+                switch ([TransportMode] $Param.TransportMode)         
+                {
+                    "Raw"
+                    {                         
+                        $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
+
+                        $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
+
+                        [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
+
+                        $stream.SetLength($totalBufferSize)
+
+                        $stream.position = 0
+
+                        $totalBytesRead = 0
+
+                        $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
+                        do
+                        {
+                            $bufferSize = $totalBufferSize - $totalBytesRead
+                            if ($bufferSize -gt $packetSize)
+                            {
+                                $bufferSize = $packetSize
+                            }    
+                            else
+                            {
+                                # Save some memory operations for creating objects.
+                                # Usually, bellow code is call when last chunk is being sent.
+                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
+                            }                
+
+                            $Param.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
+
+                            $null = $stream.Write($buffer, 0, $buffer.Length)
+
+                            $totalBytesRead += $bufferSize
+                        } until ($totalBytesRead -eq $totalBufferSize)
+                    }
+
+                    "Base64"
+                    {
+                        [byte[]] $buffer = [System.Convert]::FromBase64String(($Param.Client.Reader.ReadLine()))
+
+                        $stream.Write($buffer, 0, $buffer.Length)   
+                    }
+                }                    
+
+                $stream.Position = 0                                                                
+
+                if ($Param.RequireResize)
+                {
+                    #$image = [System.Drawing.Image]::FromStream($stream)
+
+                    $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
+
+                    $Param.SyncHash.VirtualDesktop.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $Param.VirtualDesktopWidth -NewHeight $Param.VirtualDesktopHeight                   
+                }
+                else
+                {                    
+                    $Param.SyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
+                }
+            }
+            catch 
+            {               
+                break
+            }            
+            finally
+            {
+                $stream.Close()
+            }
+                
+        }
+    }
+    finally
+    {        
+        $Param.SyncHash.VirtualDesktop.Form.Close()
+    }
+}
+
+$global:IngressEventScriptBlock = {
+    <#
+        .SYNOPSIS
+            Threaded code block to receive remote events.
+
+            This code is expected to be run inside a new PowerShell Runspace.
+
+        .PARAMETER Param.Client
+            A ClientIO Object with an established connection to remote server.        
+    #>
+
+    enum CursorType {
+        IDC_APPSTARTING
+        IDC_ARROW
+        IDC_CROSS
+        IDC_HAND
+        IDC_HELP
+        IDC_IBEAM
+        IDC_ICON
+        IDC_NO
+        IDC_SIZE
+        IDC_SIZEALL
+        IDC_SIZENESW
+        IDC_SIZENS
+        IDC_SIZENWSE
+        IDC_SIZEWE
+        IDC_UPARROW
+        IDC_WAIT
+    }
+
+    enum OutputCommand {
+        KeepAlive = 0x1
+        MouseCursorUpdated = 0x2 
+        ClipboardUpdated = 0x3         
+    }    
+
+    while ($true)                    
+    {        
+        try
+        {         
+            $jsonCommand = $Param.Client.Reader.ReadLine()                        
+        }
+        catch
+        { break }        
+
+        try
+        {
+            $command = $jsonCommand | ConvertFrom-Json
+        }
+        catch
+        { continue }
+
+        if (-not ($command.PSobject.Properties.name -match "Id"))
+        { continue }           
+        
+        switch ([OutputCommand] $command.Id)
+        {        
+            # Remote Global Mouse Cursor State Changed (Icon)
+            "MouseCursorUpdated"
+            {                
+                if (-not ($command.PSobject.Properties.name -match "Cursor"))
+                { continue } 
+
+                $cursor = [System.Windows.Forms.Cursors]::Arrow
+
+                switch ([CursorType] $command.Cursor)
+                {                    
+                    "IDC_APPSTARTING" { $cursor = [System.Windows.Forms.Cursors]::AppStarting }                    
+                    "IDC_CROSS" { $cursor = [System.Windows.Forms.Cursors]::Cross }
+                    "IDC_HAND" { $cursor = [System.Windows.Forms.Cursors]::Hand }
+                    "IDC_HELP" { $cursor = [System.Windows.Forms.Cursors]::Help }
+                    "IDC_IBEAM" { $cursor = [System.Windows.Forms.Cursors]::IBeam }                    
+                    "IDC_NO" { $cursor = [System.Windows.Forms.Cursors]::No }                    
+                    "IDC_SIZENESW" { $cursor = [System.Windows.Forms.Cursors]::SizeNESW }
+                    "IDC_SIZENS" { $cursor = [System.Windows.Forms.Cursors]::SizeNS }
+                    "IDC_SIZENWSE" { $cursor = [System.Windows.Forms.Cursors]::SizeNWSE }
+                    "IDC_SIZEWE" { $cursor = [System.Windows.Forms.Cursors]::SizeWE }
+                    "IDC_UPARROW" { $cursor = [System.Windows.Forms.Cursors]::UpArrow }
+                    "IDC_WAIT" { $cursor = [System.Windows.Forms.Cursors]::WaitCursor }
+
+                     {($_ -eq "IDC_SIZE") -or ($_ -eq "IDC_SIZEALL")}
+                     {
+                        $cursor = [System.Windows.Forms.Cursors]::SizeAll 
+                    }
+                }
+
+                try 
+                {
+                    $Param.SyncHash.VirtualDesktop.Picture.Cursor = $cursor
+                }
+                catch 
+                {}
+
+                break
+            }
+
+            "ClipboardUpdated"
+            {
+                if (-not ($command.PSobject.Properties.name -match "Text"))
+                { continue } 
+                
+                Set-Clipboard -Value $command.Text
+            }
+        }
+    }    
 }
 
 function New-VirtualDesktopForm
