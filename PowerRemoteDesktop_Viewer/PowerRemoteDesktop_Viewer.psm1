@@ -1088,9 +1088,7 @@ $global:IngressEventScriptBlock = {
             ([InputEvent]::MouseCursorUpdated)
             {                
                 if (-not ($aEvent.PSobject.Properties.name -match "Cursor"))
-                { continue } 
-
-                $HostSyncHash.Host.Ui.WriteLine($aEvent.Cursor)
+                { continue }                 
 
                 $cursor = [System.Windows.Forms.Cursors]::Arrow
 
