@@ -1903,11 +1903,11 @@ function Invoke-RemoteDesktopServer
             $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
             if ($CertificateFile)
             {
-                $Certificate.Import($CertificateFile)
+                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile
             }
             else
             {
-                $Certificate.Import([Convert]::FromBase64String($EncodedCertificate))
+                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 @(, [Convert]::FromBase64String($EncodedCertificate))
             }
         }
 
