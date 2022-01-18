@@ -55,9 +55,9 @@ Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool 
 
 $global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
 
-# Used for debugging purpose (For debugging runspaces)
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
+    ClipboardText = (Get-Clipboard -Raw)
 })
 
 # Last until PowerShell session is closed
@@ -896,7 +896,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         .PARAMETER Param.VirtualDesktopHeight
             The integer value representing remote screen height.
 
-        .PARAMETER Param.SyncHash
+        .PARAMETER Param.VirtualDesktopSyncHash
             Synchronized Hashtable containing objects to "safe-thread"       
 
         .PARAMETER Param.TransportMode
@@ -1030,11 +1030,11 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                     $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
 
-                    $Param.SyncHash.VirtualDesktop.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $Param.VirtualDesktopWidth -NewHeight $Param.VirtualDesktopHeight                   
+                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $Param.VirtualDesktopWidth -NewHeight $Param.VirtualDesktopHeight                   
                 }
                 else
                 {                    
-                    $Param.SyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
+                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
                 }
             }
             catch 
@@ -1050,7 +1050,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
     }
     finally
     {        
-        $Param.SyncHash.VirtualDesktop.Form.Close()
+        $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.Close()
     }
 }
 
@@ -1084,7 +1084,7 @@ $global:IngressEventScriptBlock = {
         IDC_WAIT
     }
 
-    enum OutputCommand {
+    enum InputEvent {
         KeepAlive = 0x1
         MouseCursorUpdated = 0x2 
         ClipboardUpdated = 0x3         
@@ -1094,32 +1094,32 @@ $global:IngressEventScriptBlock = {
     {        
         try
         {         
-            $jsonCommand = $Param.Client.Reader.ReadLine()                        
+            $jsonEvent = $Param.Client.Reader.ReadLine()                        
         }
         catch
         { break }        
 
         try
         {
-            $command = $jsonCommand | ConvertFrom-Json
+            $aEvent = $jsonEvent | ConvertFrom-Json
         }
         catch
         { continue }
 
-        if (-not ($command.PSobject.Properties.name -match "Id"))
+        if (-not ($aEvent.PSobject.Properties.name -match "Id"))
         { continue }           
         
-        switch ([OutputCommand] $command.Id)
+        switch ([InputEvent] $aEvent.Id)
         {        
             # Remote Global Mouse Cursor State Changed (Icon)
             "MouseCursorUpdated"
             {                
-                if (-not ($command.PSobject.Properties.name -match "Cursor"))
+                if (-not ($aEvent.PSobject.Properties.name -match "Cursor"))
                 { continue } 
 
                 $cursor = [System.Windows.Forms.Cursors]::Arrow
 
-                switch ([CursorType] $command.Cursor)
+                switch ([CursorType] $aEvent.Cursor)
                 {                    
                     "IDC_APPSTARTING" { $cursor = [System.Windows.Forms.Cursors]::AppStarting }                    
                     "IDC_CROSS" { $cursor = [System.Windows.Forms.Cursors]::Cross }
@@ -1142,7 +1142,7 @@ $global:IngressEventScriptBlock = {
 
                 try 
                 {
-                    $Param.SyncHash.VirtualDesktop.Picture.Cursor = $cursor
+                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Cursor = $cursor
                 }
                 catch 
                 {}
@@ -1152,13 +1152,115 @@ $global:IngressEventScriptBlock = {
 
             "ClipboardUpdated"
             {
-                if (-not ($command.PSobject.Properties.name -match "Text"))
+                if (-not ($aEvent.PSobject.Properties.name -match "Text"))
                 { continue } 
                 
-                Set-Clipboard -Value $command.Text
+                $HostSyncHash.ClipboardText = $aEvent.Text
+
+                Set-Clipboard -Value $aEvent.Text
             }
         }
     }    
+}
+
+$global:EgressEventScriptBlock = {
+
+    enum OutputEvent {
+        # 0x1 0x2 0x3 are at another place (GUI Thread)
+        KeepAlive = 0x4        
+        ClipboardUpdated = 0x5
+    }  
+
+    function Send-Event
+    {
+        <#
+            .SYNOPSIS
+                Send an event to remote peer.
+
+            .PARAMETER AEvent
+                Define what kind of event to send.
+
+            .PARAMETER Data
+                An optional object containing additional information about the event. 
+        #>
+        param (            
+            [Parameter(Mandatory=$True)]
+            [OutputEvent] $AEvent,
+
+            [PSCustomObject] $Data = $null
+        )
+
+        try 
+        {
+            if (-not $Data)
+            {
+                $Data = New-Object -TypeName PSCustomObject -Property @{
+                    Id = $AEvent 
+                }
+            }
+            else
+            {
+                $Data | Add-Member -MemberType NoteProperty -Name "Id" -Value $AEvent
+            }            
+
+            $Param.OutputEventSyncHash.Writer.WriteLine(($Data | ConvertTo-Json -Compress))  
+
+            return $true
+        }
+        catch 
+        { 
+            return $false
+        }
+    }
+
+    $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    while ($true)
+    {
+        # Events that occurs every seconds needs to be placed bellow.
+        # If no event has occured during this second we send a Keep-Alive signal to
+        # remote peer and detect a potential socket disconnection.
+        if ($stopWatch.ElapsedMilliseconds -ge 1000)
+        {
+            try
+            {
+                $eventTriggered = $false
+
+                if ($Param.SynchronizeClipboard)
+                {
+                    # IDEA: Check for existing clipboard change event or implement a custom clipboard
+                    # change detector using "WM_CLIPBOARDUPDATE" for example (WITHOUT INLINE C#)
+                    # It is not very important but it would avoid calling "Get-Clipboard" every seconds.                
+                    $currentClipboard = (Get-Clipboard -Raw)
+
+                    if ($currentClipboard -and $currentClipboard -cne $HostSyncHash.ClipboardText)
+                    {                    
+                        $data = New-Object -TypeName PSCustomObject -Property @{                
+                            Text = $currentClipboard
+                        } 
+
+                        if (-not (Send-Event -AEvent "ClipboardUpdated" -Data $data))
+                        { break }
+
+                        $HostSyncHash.ClipboardText = $currentClipboard
+
+                        $eventTriggered = $true                    
+                    }
+                }
+                
+                # Send a Keep-Alive if during this second iteration nothing happened.
+                if (-not $eventTriggered)
+                {
+                    if (-not (Send-Event -AEvent "KeepAlive"))
+                    { break }
+                }
+            }
+            finally
+            {
+                $stopWatch.Restart()
+            }
+        }
+    }
 }
 
 function New-VirtualDesktopForm
@@ -1249,7 +1351,6 @@ function New-RunSpace
         $runspace.SessionStateProxy.SetVariable("Param", $Param) 
     }
 
-    # Debug (Dev Only)
     $runspace.SessionStateProxy.SetVariable("HostSyncHash", $global:HostSyncHash)
 
     $powershell = [PowerShell]::Create().AddScript($ScriptBlock)
@@ -1285,7 +1386,7 @@ function Invoke-RemoteDesktopViewer
         .PARAMETER SecurePassword
             SecureString Password object used to authenticate with remote server (Recommended)
 
-            Call "ConvertTo-SecureString –String "YouPasswordHere" -AsPlainText -Force" on this parameter to convert
+            Call "ConvertTo-SecureString -String "YouPasswordHere" -AsPlainText -Force" on this parameter to convert
             a plain-text String to SecureString.
 
             See example section.
@@ -1298,7 +1399,11 @@ function Invoke-RemoteDesktopViewer
             Recommended if possible.
 
         .PARAMETER DisableVerbosity
-            Disable verbosity (not recommended)        
+            Disable verbosity (not recommended)  
+            
+        .PARAMETER DisableClipboard
+            This option disable Clipboard synchronization with remote peer. By default Clipboard synchronization
+            is enabled and will synchronize only if both Viewer and Server have Clipboard synchronization enabled.
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
@@ -1315,7 +1420,8 @@ function Invoke-RemoteDesktopViewer
         [SecureString] $SecurePassword,
         [String] $Password,                
 
-        [switch] $DisableVerbosity
+        [switch] $DisableVerbosity,
+        [switch] $DisableClipboard
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1362,11 +1468,11 @@ function Invoke-RemoteDesktopViewer
 
             Write-Verbose "Create WinForms Environment..."
 
-            $syncHash = [HashTable]::Synchronized(@{
+            $virtualDesktopSyncHash = [HashTable]::Synchronized(@{
                 VirtualDesktop = New-VirtualDesktopForm
             })            
 
-            $syncHash.VirtualDesktop.Form.Text = [string]::Format(
+            $virtualDesktopSyncHash.VirtualDesktop.Form.Text = [string]::Format(
                 "Power Remote Desktop: {0}/{1} - {2}", 
                 $session.SessionInformation.Username,
                 $session.SessionInformation.MachineName,
@@ -1376,8 +1482,8 @@ function Invoke-RemoteDesktopViewer
             # Prepare Virtual Desktop 
             $locationResolutionInformation = [System.Windows.Forms.Screen]::PrimaryScreen
 
-            $screenRect = $syncHash.VirtualDesktop.Form.RectangleToScreen($syncHash.VirtualDesktop.Form.ClientRectangle)
-            $captionHeight = $screenRect.Top - $syncHash.VirtualDesktop.Form.Top
+            $screenRect = $virtualDesktopSyncHash.VirtualDesktop.Form.RectangleToScreen($virtualDesktopSyncHash.VirtualDesktop.Form.ClientRectangle)
+            $captionHeight = $screenRect.Top - $virtualDesktopSyncHash.VirtualDesktop.Form.Top
 
             $localScreenWidth = $locationResolutionInformation.WorkingArea.Width
             $localScreenHeight = $locationResolutionInformation.WorkingArea.Height           
@@ -1421,18 +1527,23 @@ function Invoke-RemoteDesktopViewer
             }
 
             # Size Virtual Desktop Form Window
-            $syncHash.VirtualDesktop.Form.ClientSize = [System.Drawing.Size]::new($virtualDesktopWidth, $virtualDesktopHeight) 
+            $virtualDesktopSyncHash.VirtualDesktop.Form.ClientSize = [System.Drawing.Size]::new($virtualDesktopWidth, $virtualDesktopHeight) 
 
             # Center Virtual Desktop Form
-            $syncHash.VirtualDesktop.Form.Location = [System.Drawing.Point]::new(
-                (($localScreenWidth - $syncHash.VirtualDesktop.Form.Width) / 2),
-                (($localScreenHeight - $syncHash.VirtualDesktop.Form.Height) / 2)
-            )            
+            $virtualDesktopSyncHash.VirtualDesktop.Form.Location = [System.Drawing.Point]::new(
+                (($localScreenWidth - $virtualDesktopSyncHash.VirtualDesktop.Form.Width) / 2),
+                (($localScreenHeight - $virtualDesktopSyncHash.VirtualDesktop.Form.Height) / 2)
+            )   
+            
+            # Create a thread-safe hashtable to send events to remote server.            
+            $outputEventSyncHash = [HashTable]::Synchronized(@{
+                Writer = $session.ClientEvents.Writer
+            })
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
             if (-not $DisableInputControl)                   
             {
-                enum InputCommand {
+                enum OutputEvent {
                     Keyboard = 0x1
                     MouseClickMove = 0x2
                     MouseWheel = 0x3
@@ -1444,12 +1555,12 @@ function Invoke-RemoteDesktopViewer
                     Move = 0x3
                 }
 
-                function New-MouseCommand
+                function New-MouseEvent
                 {
                     <#
                         .SYNOPSIS
-                            Generate a new mouse command object to be sent to server.
-                            This command is used to simulate mouse move and clicks.
+                            Generate a new mouse event object to be sent to server.
+                            This event is used to simulate mouse move and clicks.
 
                         .PARAMETER X
                             The position of mouse in horizontal axis.
@@ -1464,9 +1575,9 @@ function Invoke-RemoteDesktopViewer
                             The pressed button on mouse (Example: Left, Right, Middle)
 
                         .EXAMPLE
-                            New-MouseCommand -X 10 -Y 35 -Type "Up" -Button "Left"
-                            New-MouseCommand -X 10 -Y 35 -Type "Down" -Button "Left"
-                            New-MouseCommand -X 100 -Y 325 -Type "Move"
+                            New-MouseEvent -X 10 -Y 35 -Type "Up" -Button "Left"
+                            New-MouseEvent -X 10 -Y 35 -Type "Down" -Button "Left"
+                            New-MouseEvent -X 100 -Y 325 -Type "Move"
                     #>
                     param (
                         [Parameter(Mandatory=$true)]
@@ -1480,7 +1591,7 @@ function Invoke-RemoteDesktopViewer
                     )
 
                     return New-Object PSCustomObject -Property @{
-                        Id = [int][InputCommand]::MouseClickMove
+                        Id = [int][OutputEvent]::MouseClickMove
                         X = $X
                         Y = $Y
                         Button = $Button
@@ -1488,19 +1599,19 @@ function Invoke-RemoteDesktopViewer
                     }
                 }
 
-                function New-KeyboardCommand
+                function New-KeyboardEvent
                 {
                     <#
                         .SYNOPSIS
-                            Generate a new keyboard command object to be sent to server.
-                            This command is used to simulate keyboard strokes.  
+                            Generate a new keyboard event object to be sent to server.
+                            This event is used to simulate keyboard strokes.  
 
                         .PARAMETER Keys
                             Plain text keys to be simulated on remote computer.
 
                         .EXAMPLE
-                            New-KeyboardCommand -Keys "Hello, World"
-                            New-KeyboardCommand -Keys "t"
+                            New-KeyboardEvent -Keys "Hello, World"
+                            New-KeyboardEvent -Keys "t"
                     #>
                     param (
                         [Parameter(Mandatory=$true)]
@@ -1508,7 +1619,7 @@ function Invoke-RemoteDesktopViewer
                     )
 
                     return New-Object PSCustomObject -Property @{
-                        Id = [int][InputCommand]::Keyboard
+                        Id = [int][OutputEvent]::Keyboard
                         Keys = $Keys
                     }
                 }
@@ -1520,7 +1631,7 @@ function Invoke-RemoteDesktopViewer
                             Transform the virtual mouse (the one in Virtual Desktop Form) coordinates to real remote desktop
                             screen coordinates (especially when incomming desktop frames are resized)
 
-                            When command is generated, it is immediately sent to remote server.
+                            When event is generated, it is immediately sent to remote server.
 
                         .PARAMETER X
                             The position of virtual mouse in horizontal axis.
@@ -1557,9 +1668,9 @@ function Invoke-RemoteDesktopViewer
                     $X += $session.SessionInformation.Screen.X
                     $Y += $session.SessionInformation.Screen.Y
 
-                    $command = (New-MouseCommand -X $X -Y $Y -Button $Button -Type $Type)                    
+                    $aEvent = (New-MouseEvent -X $X -Y $Y -Button $Button -Type $Type)                    
 
-                    $session.ClientEvents.Writer.WriteLine(($command | ConvertTo-Json -Compress))                    
+                    $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))                    
                 }
 
                 function Send-VirtualKeyboard
@@ -1580,12 +1691,12 @@ function Invoke-RemoteDesktopViewer
                         [string] $KeyChain
                     )
 
-                    $command = (New-KeyboardCommand -Keys $KeyChain)                                
+                    $aEvent = (New-KeyboardEvent -Keys $KeyChain)                                
 
-                    $session.ClientEvents.Writer.WriteLine(($command  | ConvertTo-Json -Compress)) 
+                    $outputEventSyncHash.Writer.WriteLine(($aEvent  | ConvertTo-Json -Compress)) 
                 }
 
-                $syncHash.VirtualDesktop.Form.Add_KeyPress(
+                $virtualDesktopSyncHash.VirtualDesktop.Form.Add_KeyPress(
                     { 
                         if ($_.KeyChar)
                         {
@@ -1610,7 +1721,7 @@ function Invoke-RemoteDesktopViewer
                     }
                 )
 
-                $syncHash.VirtualDesktop.Form.Add_KeyDown(
+                $virtualDesktopSyncHash.VirtualDesktop.Form.Add_KeyDown(
                     {                       
                         $result = ""
                         switch ($_.KeyValue)
@@ -1659,32 +1770,32 @@ function Invoke-RemoteDesktopViewer
                     }
                 )                        
 
-                $syncHash.VirtualDesktop.Picture.Add_MouseDown(
+                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseDown(
                     {                         
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Down"
                     }
                 )
 
-                $syncHash.VirtualDesktop.Picture.Add_MouseUp(
+                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseUp(
                     { 
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Up"
                     }
                 )
 
-                $syncHash.VirtualDesktop.Picture.Add_MouseMove(
+                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseMove(
                     { 
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type "Move"
                     }
                 )          
 
-                $syncHash.VirtualDesktop.Picture.Add_MouseWheel(
+                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseWheel(
                     {
-                        $command = New-Object PSCustomObject -Property @{
-                            Id = [int][InputCommand]::MouseWheel
+                        $aEvent = New-Object PSCustomObject -Property @{
+                            Id = [int][OutputEvent]::MouseWheel
                             Delta = $_.Delta
                         }
 
-                        $session.ClientEvents.Writer.WriteLine(($command | ConvertTo-Json -Compress))
+                        $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))
                     }
                 )  
             }
@@ -1693,7 +1804,7 @@ function Invoke-RemoteDesktopViewer
 
             $param = New-Object -TypeName PSCustomObject -Property @{
                 Client = $session.ClientDesktop
-                SyncHash = $syncHash                            
+                VirtualDesktopSyncHash = $virtualDesktopSyncHash                            
                 VirtualDesktopWidth = $virtualDesktopWidth 
                 VirtualDesktopHeight = $virtualDesktopHeight
                 RequireResize = $requireResize
@@ -1707,15 +1818,26 @@ function Invoke-RemoteDesktopViewer
 
             $param = New-Object -TypeName PSCustomObject -Property @{
                 Client = $session.ClientEvents
-                SyncHash = $syncHash
+                VirtualDesktopSyncHash = $virtualDesktopSyncHash
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)  
             $runspaces.Add($newRunspace)
 
+
+            Write-Verbose "Create runspace for outgoing events..."
+
+            $param = New-Object -TypeName PSCustomObject -Property @{                
+                OutputEventSyncHash = $outputEventSyncHash
+                SynchronizeClipboard = -not $DisableClipboard
+            }
+
+            $newRunspace = (New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param)  
+            $runspaces.Add($newRunspace)
+
             Write-Verbose "Done. Showing Virtual Desktop Form."                       
 
-            $null = $syncHash.VirtualDesktop.Form.ShowDialog()
+            $null = $virtualDesktopSyncHash.VirtualDesktop.Form.ShowDialog()
         }
         finally
         {    
@@ -1738,9 +1860,9 @@ function Invoke-RemoteDesktopViewer
             }    
             $runspaces.Clear() 
 
-            if ($syncHash.VirtualDesktop)
+            if ($virtualDesktopSyncHash.VirtualDesktop)
             {            
-                $syncHash.VirtualDesktop.Form.Dispose()
+                $virtualDesktopSyncHash.VirtualDesktop.Form.Dispose()
             }                                    
         }           
     }

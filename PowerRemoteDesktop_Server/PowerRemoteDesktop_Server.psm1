@@ -56,9 +56,9 @@ Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool 
 
 $global:PowerRemoteDesktopVersion = "1.0.4.beta.5"
 
-# Used for debugging purpose (For debugging runspaces)
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
+    ClipboardText = (Get-Clipboard -Raw)
 })
 
 enum TransportMode {
@@ -1291,10 +1291,12 @@ $global:IngressEventScriptBlock = {
         MOUSEEVENTF_HWHEEL = 0x01000
     }
 
-    enum InputCommand {
+    enum InputEvent {
         Keyboard = 0x1
         MouseClickMove = 0x2
         MouseWheel = 0x3
+        KeepAlive = 0x4        
+        ClipboardUpdated = 0x5
     }
 
     enum MouseState {
@@ -1343,10 +1345,10 @@ $global:IngressEventScriptBlock = {
     $keyboardSim = [KeyboardSim]::New()
 
     while ($true)                    
-    {       
+    {             
         try 
         {            
-            $jsonCommand = $Param.Reader.ReadLine()                        
+            $jsonEvent = $Param.Reader.ReadLine()                        
         }
         catch
         { 
@@ -1357,37 +1359,37 @@ $global:IngressEventScriptBlock = {
 
         try
         {
-            $command = $jsonCommand | ConvertFrom-Json
+            $aEvent = $jsonEvent | ConvertFrom-Json
         }
         catch { continue }
 
-        if (-not ($command.PSobject.Properties.name -match "Id"))
+        if (-not ($aEvent.PSobject.Properties.name -match "Id"))
         { continue }                                             
          
-        switch ([InputCommand] $command.Id)
+        switch ([InputEvent] $aEvent.Id)
         {
             # Keyboard Input Simulation
             "Keyboard"
             {                    
-                if (-not ($command.PSobject.Properties.name -match "Keys"))
+                if (-not ($aEvent.PSobject.Properties.name -match "Keys"))
                 { break }
 
-                $keyboardSim.SendInput($command.Keys)                             
+                $keyboardSim.SendInput($aEvent.Keys)                             
                 break  
             }
 
             # Mouse Move & Click Simulation
             "MouseClickMove"
             {          
-                if (-not ($command.PSobject.Properties.name -match "Type"))
+                if (-not ($aEvent.PSobject.Properties.name -match "Type"))
                 { break }
 
-                switch ([MouseState] $command.Type)
+                switch ([MouseState] $aEvent.Type)
                 {
                     # Mouse Down/Up
                     {($_ -eq "Down") -or ($_ -eq "Up")}
                     {
-                        [W.U32]::SetCursorPos($command.X, $command.Y)   
+                        [W.U32]::SetCursorPos($aEvent.X, $aEvent.Y)   
 
                         $down = ($_ -eq "Down")
 
@@ -1397,7 +1399,7 @@ $global:IngressEventScriptBlock = {
                             $mouseCode = [int][MouseFlags]::MOUSEEVENTF_LEFTUP
                         }                                            
 
-                        switch($command.Button)
+                        switch($aEvent.Button)
                         {                        
                             "Right"
                             {
@@ -1433,7 +1435,7 @@ $global:IngressEventScriptBlock = {
                     # Mouse Move
                     "Move"
                     {
-                        [W.U32]::SetCursorPos($command.X, $command.Y)
+                        [W.U32]::SetCursorPos($aEvent.X, $aEvent.Y)
 
                         break
                     }                    
@@ -1444,10 +1446,21 @@ $global:IngressEventScriptBlock = {
 
             # Mouse Wheel Simulation
             "MouseWheel" {
-                [W.U32]::mouse_event([int][MouseFlags]::MOUSEEVENTF_WHEEL, 0, 0, $command.Delta, 0);
+                [W.U32]::mouse_event([int][MouseFlags]::MOUSEEVENTF_WHEEL, 0, 0, $aEvent.Delta, 0);
 
                 break
             }    
+
+            # Clipboard Update
+            "ClipboardUpdated"
+            {
+                if (-not ($aEvent.PSobject.Properties.name -match "Text"))
+                { continue } 
+
+                $HostSyncHash.ClipboardText = $aEvent.Text
+                
+                Set-Clipboard -Value $aEvent.Text
+            }
         }
     }    
 }
@@ -1487,7 +1500,7 @@ $global:EgressEventScriptBlock = {
         IDC_WAIT = 32514
     }
 
-    enum OutputCommand {
+    enum OutputEvent {
         KeepAlive = 0x1
         MouseCursorUpdated = 0x2  
         ClipboardUpdated = 0x3     
@@ -1584,15 +1597,15 @@ $global:EgressEventScriptBlock = {
             .SYNOPSIS
                 Send an event to remote peer.
 
-            .PARAMETER command
-                A supported command id representing the kind of event.
+            .PARAMETER AEvent
+                Define what kind of event to send.
 
-            .PARAMETER data
+            .PARAMETER Data
                 An optional object containing additional information about the event. 
         #>
         param (            
             [Parameter(Mandatory=$True)]
-            [OutputCommand] $Command,
+            [OutputEvent] $AEvent,
 
             [PSCustomObject] $Data = $null
         )
@@ -1602,12 +1615,12 @@ $global:EgressEventScriptBlock = {
             if (-not $Data)
             {
                 $Data = New-Object -TypeName PSCustomObject -Property @{
-                    Id = $Command 
+                    Id = $AEvent 
                 }
             }
             else
             {
-                $Data | Add-Member -MemberType NoteProperty -Name "Id" -Value $Command
+                $Data | Add-Member -MemberType NoteProperty -Name "Id" -Value $AEvent
             }            
 
             $Param.Writer.WriteLine(($Data | ConvertTo-Json -Compress))  
@@ -1623,11 +1636,6 @@ $global:EgressEventScriptBlock = {
     $cursors = Initialize-Cursors
 
     $oldCursor = 0
-
-    if ($Param.SynchronizeClipboard)
-    {
-        $oldClipboard = Get-Clipboard
-    }
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -1647,18 +1655,18 @@ $global:EgressEventScriptBlock = {
                     # IDEA: Check for existing clipboard change event or implement a custom clipboard
                     # change detector using "WM_CLIPBOARDUPDATE" for example (WITHOUT INLINE C#)
                     # It is not very important but it would avoid calling "Get-Clipboard" every seconds.                
-                    $currentClipboard = Get-Clipboard
+                    $currentClipboard = (Get-Clipboard -Raw)
 
-                    if ($currentClipboard -and $currentClipboard -cne $oldClipboard)
+                    if ($currentClipboard -and $currentClipboard -cne $HostSyncHash.ClipboardText)
                     {                    
                         $data = New-Object -TypeName PSCustomObject -Property @{                
                             Text = $currentClipboard
                         } 
 
-                        if (-not (Send-Event -Command "ClipboardUpdated" -Data $data))
+                        if (-not (Send-Event -AEvent "ClipboardUpdated" -Data $data))
                         { break }
 
-                        $oldClipboard = $currentClipboard
+                        $HostSyncHash.ClipboardText = $currentClipboard
 
                         $eventTriggered = $true                    
                     }
@@ -1667,7 +1675,7 @@ $global:EgressEventScriptBlock = {
                 # Send a Keep-Alive if during this second iteration nothing happened.
                 if (-not $eventTriggered)
                 {
-                    if (-not (Send-Event -Command "KeepAlive"))
+                    if (-not (Send-Event -AEvent "KeepAlive"))
                     { break }
                 }
             }
@@ -1682,13 +1690,13 @@ $global:EgressEventScriptBlock = {
         $currentCursor = Get-GlobalMouseCursorIconHandle
         if ($currentCursor -ne 0 -and $currentCursor -ne $oldCursor)
         {   
-            $cursorTypeName = ($cursors.GetEnumerator() | ? { $_.Value -eq $currentCursor }).Key
+            $cursorTypeName = ($cursors.GetEnumerator() | Where-Object { $_.Value -eq $currentCursor }).Key
 
             $data = New-Object -TypeName PSCustomObject -Property @{                
                 Cursor = $cursorTypeName
             }             
 
-            if (-not (Send-Event -Command "MouseCursorUpdated" -Data $data))
+            if (-not (Send-Event -AEvent "MouseCursorUpdated" -Data $data))
             { break }
 
             $oldCursor = $currentCursor
@@ -1737,7 +1745,6 @@ function New-RunSpace
         $runspace.SessionStateProxy.SetVariable("Param", $Param) 
     }
 
-    # Debug (Dev Only)
     $runspace.SessionStateProxy.SetVariable("HostSyncHash", $global:HostSyncHash)
 
     $powershell = [PowerShell]::Create().AddScript($ScriptBlock)
