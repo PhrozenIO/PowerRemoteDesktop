@@ -72,11 +72,6 @@ enum ClipboardMode {
     Both = 4
 }
 
-enum TransportMode {
-    Raw = 1
-    Base64 = 2
-}
-
 function Write-Banner 
 {
     <#
@@ -616,7 +611,6 @@ class ClientIO {
             (-not ($sessionInformation.PSobject.Properties.name -contains "Username")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "WindowsVersion")) -or                      
             (-not ($sessionInformation.PSobject.Properties.name -contains "SessionId")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "TransportMode")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "Version")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "Screens")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "ViewOnly"))
@@ -879,11 +873,6 @@ class ViewerSession
 
 $global:VirtualDesktopUpdaterScriptBlock = {   
     
-    enum TransportMode {
-        Raw = 1
-        Base64 = 2
-    }
-
     function Invoke-SmoothResize
     {
         <#
@@ -949,53 +938,40 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         {                   
             $stream = New-Object System.IO.MemoryStream
             try
-            {      
-                switch ([TransportMode] $Param.TransportMode)         
+            {                            
+                $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
+
+                $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
+
+                [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
+
+                $stream.SetLength($totalBufferSize)
+
+                $stream.position = 0
+
+                $totalBytesRead = 0
+
+                $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
+                do
                 {
-                    ([TransportMode]::Raw)
-                    {                        
-                        $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
+                    $bufferSize = $totalBufferSize - $totalBytesRead
+                    if ($bufferSize -gt $packetSize)
+                    {
+                        $bufferSize = $packetSize
+                    }    
+                    else
+                    {
+                        # Save some memory operations for creating objects.
+                        # Usually, bellow code is call when last chunk is being sent.
+                        $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
+                    }                
 
-                        $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
+                    $Param.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
 
-                        [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
+                    $null = $stream.Write($buffer, 0, $buffer.Length)
 
-                        $stream.SetLength($totalBufferSize)
-
-                        $stream.position = 0
-
-                        $totalBytesRead = 0
-
-                        $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
-                        do
-                        {
-                            $bufferSize = $totalBufferSize - $totalBytesRead
-                            if ($bufferSize -gt $packetSize)
-                            {
-                                $bufferSize = $packetSize
-                            }    
-                            else
-                            {
-                                # Save some memory operations for creating objects.
-                                # Usually, bellow code is call when last chunk is being sent.
-                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
-                            }                
-
-                            $Param.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
-
-                            $null = $stream.Write($buffer, 0, $buffer.Length)
-
-                            $totalBytesRead += $bufferSize
-                        } until ($totalBytesRead -eq $totalBufferSize)
-                    }
-
-                    ([TransportMode]::Base64)
-                    {                        
-                        [byte[]] $buffer = [System.Convert]::FromBase64String(($Param.Client.Reader.ReadLine()))
-
-                        $stream.Write($buffer, 0, $buffer.Length)   
-                    }
-                }                    
+                    $totalBytesRead += $bufferSize
+                } until ($totalBytesRead -eq $totalBufferSize)                 
 
                 $stream.Position = 0                                                                
 
@@ -1801,8 +1777,7 @@ function Invoke-RemoteDesktopViewer
                 VirtualDesktopSyncHash = $virtualDesktopSyncHash                            
                 VirtualDesktopWidth = $virtualDesktopWidth 
                 VirtualDesktopHeight = $virtualDesktopHeight
-                RequireResize = $requireResize
-                TransportMode = [TransportMode] $session.SessionInformation.TransportMode                
+                RequireResize = $requireResize          
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  

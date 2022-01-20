@@ -192,9 +192,6 @@ Supported options:
 * `Password` (**Mandatory**): Define password used during authentication process.
 * `CertificateFile` (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
 * `EncodedCertificate` (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
-* `TransportMode`(Default: `Raw`): Define which method to use to transfer streams.
-    * `Raw`: Transfer streams as raw bytes (recommended)
-    * `Base64`: Transfer streams as base64 encoded string
 * `TLSv1_3` (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
 * `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
 * `ImageQuality` (Default: `100`): JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.      
@@ -267,7 +264,7 @@ Detail                           Fingerprint
 
 ### 11 January 2022 (1.0.1 Beta 2)
 
-* Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances. Base64 Transport Method is still available through an option but disabled by default.
+* Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances.
 * Protocol has drastically changed. It is smoother to read and less prone to errors.
 * TLS v1.3 option added (Might not be supported by some systems).
 * Several code optimization, refactoring and fixes.

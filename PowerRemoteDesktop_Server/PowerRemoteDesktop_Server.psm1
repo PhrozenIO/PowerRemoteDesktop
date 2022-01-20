@@ -60,11 +60,6 @@ $global:HostSyncHash = [HashTable]::Synchronized(@{
     RunningSession = $false
 })
 
-enum TransportMode {
-    Raw = 1
-    Base64 = 2
-}
-
 enum ClipboardMode {
     Disabled = 1
     Receive = 2
@@ -601,14 +596,12 @@ class ClientIO {
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null
     [System.Net.Security.SslStream] $SSLStream = $null  
-    [TransportMode] $TransportMode 
 
 
     ClientIO(
         [System.Net.Sockets.TcpClient] $Client,
         [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
-        [bool] $TLSv1_3,
-        [TransportMode] $TransportMode
+        [bool] $TLSv1_3
     ) {
         <#
             .SYNOPSIS
@@ -622,9 +615,6 @@ class ClientIO {
 
             .PARAMETER TLSv1_3
                 Define whether or not SSL/TLS v1.3 must be used.
-
-            .PARAMETER TransportMode
-                Define transport method for streams (Base64 or Raw)
         #>
 
         if ((-not $Client) -or (-not $Certificate))
@@ -633,7 +623,6 @@ class ClientIO {
         }
         
         $this.Client = $Client
-        $this.TransportMode = $TransportMode
 
         Write-Verbose "Create new SSL Stream..."
 
@@ -784,7 +773,6 @@ class ClientIO {
 
         $sessionInformation = Get-LocalMachineInformation
 
-        $sessionInformation | Add-Member -MemberType NoteProperty -Name "TransportMode" -Value $this.TransportMode
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $session.Id
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion     
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "ViewOnly" -Value $ViewOnly    
@@ -855,7 +843,6 @@ class ServerIO {
     [string] $ListenAddress = "127.0.0.1"
     [int] $ListenPort = 2801
     [bool] $TLSv1_3 = $false    
-    [TransportMode] $TransportMode
     [string] $Password
     [bool] $ViewOnly = $false
 
@@ -889,9 +876,6 @@ class ServerIO {
             .PARAMETER TLSv1_3
                 Define if TLS v1.3 must be used.
 
-            .PARAMETER TransportMode
-                Define stream transport method.
-
             .PARAMETER ViewOnly
                 Define if mouse / keyboard is authorized.
         #>
@@ -899,7 +883,6 @@ class ServerIO {
         [string] $ListenAddress,
         [int] $ListenPort,
         [string] $Password,
-        [TransportMode] $TransportMode,
         [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
         [bool] $TLSv1_3,
         [bool] $ViewOnly
@@ -914,7 +897,6 @@ class ServerIO {
         $this.ListenPort = $ListenPort
         $this.TLSv1_3 = $TLSv1_3
         $this.Password = $Password
-        $this.TransportMode = $TransportMode
         $this.ViewOnly = $ViewOnly
 
         if (-not $Certificate)
@@ -998,8 +980,7 @@ class ServerIO {
         $client = [ClientIO]::New(            
             $socket,
             $this.Certificate,
-            $this.TLSv1_3,
-            $this.TransportMode
+            $this.TLSv1_3
         )
         try
         {            
@@ -1060,11 +1041,6 @@ class ServerIO {
 
 $global:DesktopStreamScriptBlock = {
     
-    enum TransportMode {
-        Raw = 1
-        Base64 = 2
-    }
-
     function Get-DesktopImage {	
         <#
             .SYNOPSIS
@@ -1164,50 +1140,33 @@ $global:DesktopStreamScriptBlock = {
                 {                    
                     $imageStream.position = 0 
                     try 
-                    {
-                        switch ([TransportMode] $Param.Client.TransportMode)
-                        {
-                            ([TransportMode]::Raw)
-                            {                                
-                                $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
+                    {                          
+                        $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
 
-                                $totalBytesSent = 0
+                        $totalBytesSent = 0
 
-                                $buffer = New-Object -TypeName byte[] -ArgumentList $packetSize
-                                do
-                                {       
-                                    $bufferSize = ($imageStream.Length - $totalBytesSent)
-                                    if ($bufferSize -gt $packetSize)
-                                    {
-                                        $bufferSize = $packetSize
-                                    }    
-                                    else
-                                    {
-                                        # Save some memory operations for creating objects.
-                                        # Usually, bellow code is call when last chunk is being sent.
-                                        $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
-                                    }                                                    
+                        $buffer = New-Object -TypeName byte[] -ArgumentList $packetSize
+                        do
+                        {       
+                            $bufferSize = ($imageStream.Length - $totalBytesSent)
+                            if ($bufferSize -gt $packetSize)
+                            {
+                                $bufferSize = $packetSize
+                            }    
+                            else
+                            {
+                                # Save some memory operations for creating objects.
+                                # Usually, bellow code is call when last chunk is being sent.
+                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
+                            }                                                    
 
-                                    # (OPTIMIZATION IDEA): Try with BinaryStream to save the need of "byte[]"" buffer.
-                                    $null = $imageStream.Read($buffer, 0, $buffer.Length)
+                            # (OPTIMIZATION IDEA): Try with BinaryStream to save the need of "byte[]"" buffer.
+                            $null = $imageStream.Read($buffer, 0, $buffer.Length)
 
-                                    $Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
+                            $Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
 
-                                    $totalBytesSent += $bufferSize                                                               
-                                } until ($totalBytesSent -eq $imageStream.Length)  
-
-                                break
-                            }
-
-                            ([TransportMode]::Base64)
-                            {                                
-                                $Param.Client.Writer.WriteLine(
-                                    [System.Convert]::ToBase64String($imageStream.ToArray())
-                                )
-
-                                break
-                            }
-                        }                                                                    
+                            $totalBytesSent += $bufferSize                                                               
+                        } until ($totalBytesSent -eq $imageStream.Length)                                                                   
                     }
                     catch
                     { break }
@@ -1793,10 +1752,6 @@ function Invoke-RemoteDesktopServer
         .PARAMETER EncodedCertificate
             A valid X509 Certificate (With Private Key) encoded as a Base64 String.
 
-        .PARAMETER TransportMode
-            Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep
-            the Base64 transport method as an alternative.
-
         .PARAMETER TLSv1_3
             Define whether or not TLS v1.3 must be used for communication with Viewer.
 
@@ -1829,7 +1784,6 @@ function Invoke-RemoteDesktopServer
         # Or
         [string] $EncodedCertificate = "", # 2
 
-        [TransportMode] $TransportMode = [TransportMode]::Raw,
         [switch] $TLSv1_3,        
         [switch] $DisableVerbosity,
         [int] $ImageQuality = 100,
@@ -1912,13 +1866,11 @@ function Invoke-RemoteDesktopServer
             }
         }
 
-        Write-Verbose $TransportMode
         # Create new server and listen
         $server = [ServerIO]::New(
             $ListenAddress,
             $ListenPort,
             $Password,
-            $TransportMode,
             $Certificate,
             $TLSv1_3,
             $ViewOnly  
