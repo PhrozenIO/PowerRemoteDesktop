@@ -1650,7 +1650,12 @@ function Invoke-RemoteDesktopViewer
 
                     $aEvent = (New-MouseEvent -X $X -Y $Y -Button $Button -Type $Type)                    
 
-                    $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))                    
+                    try
+                    {
+                        $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress)) 
+                    }  
+                    catch
+                    {}                 
                 }
 
                 function Send-VirtualKeyboard
@@ -1673,7 +1678,12 @@ function Invoke-RemoteDesktopViewer
 
                     $aEvent = (New-KeyboardEvent -Keys $KeyChain)                                
 
-                    $outputEventSyncHash.Writer.WriteLine(($aEvent  | ConvertTo-Json -Compress)) 
+                    try
+                    {
+                        $outputEventSyncHash.Writer.WriteLine(($aEvent  | ConvertTo-Json -Compress)) 
+                    }
+                    catch
+                    {}
                 }
 
                 $virtualDesktopSyncHash.VirtualDesktop.Form.Add_KeyPress(
@@ -1775,7 +1785,11 @@ function Invoke-RemoteDesktopViewer
                             Delta = $_.Delta
                         }
 
-                        $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))
+                        try
+                        {
+                            $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))
+                        }
+                        catch {}
                     }
                 )  
             }
