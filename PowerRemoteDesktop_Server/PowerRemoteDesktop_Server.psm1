@@ -57,6 +57,7 @@ $global:PowerRemoteDesktopVersion = "1.0.5.beta.6"
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
     ClipboardText = (Get-Clipboard -Raw)
+    RunningSession = $false
 })
 
 enum TransportMode {
@@ -1130,10 +1131,10 @@ $global:DesktopStreamScriptBlock = {
         $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
         $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, $imageQuality)
 
-        $packetSize = 4096        
-
-        while ($true)
-        {           
+        $packetSize = 4096   
+            
+        while ($global:HostSyncHash.RunningSession)
+        {   
             try
             {                                                           
                 $desktopImage = Get-DesktopImage -Screen $Param.Screen                                                                   
@@ -1323,7 +1324,7 @@ $global:IngressEventScriptBlock = {
     
     $keyboardSim = [KeyboardSim]::New()
 
-    while ($true)                    
+    while ($global:HostSyncHash.RunningSession)                    
     {             
         try 
         {            
@@ -1626,7 +1627,7 @@ $global:EgressEventScriptBlock = {
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    while ($true)
+    while ($global:HostSyncHash.RunningSession)
     {
         # Events that occurs every seconds needs to be placed bellow.
         # If no event has occured during this second we send a Keep-Alive signal to
@@ -1929,6 +1930,8 @@ function Invoke-RemoteDesktopServer
         {            
             try
             {                              
+                $global:HostSyncHash.RunningSession = $false
+
                 Write-Verbose "Server waiting for new incomming session..."
 
                 # Establish a new Remote Desktop Session.                                    
@@ -1939,7 +1942,9 @@ function Invoke-RemoteDesktopServer
                 # Otherwise a Timeout Exception will be raised.
                 # Actually, if someone else decide to connect in the mean time it will interrupt the whole session,
                 # Remote Viewer will then need to establish a new session from scratch.
-                $clientEvents = $server.PullClient(10 * 1000);           
+                $clientEvents = $server.PullClient(10 * 1000);      
+                
+                $global:HostSyncHash.RunningSession = $true
 
                 # Grab desired screen to capture
                 $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { $_.DeviceName -eq $server.Session.Screen }
@@ -1983,16 +1988,19 @@ function Invoke-RemoteDesktopServer
                 # Waiting for Runspaces to finish their jobs.
                 while ($true)
                 {                
-                    $completed = $true                    
+                    $completed = $true                                        
                     
                     # Probe each existing runspaces
                     foreach ($runspace in $runspaces)
                     {
                         if (-not $runspace.AsyncResult.IsCompleted)
                         {
-                            $completed = $false
-
-                            break
+                            $completed = $false                     
+                        } 
+                        elseif ($global:HostSyncHash.RunningSession)
+                        {                        
+                            # Notifying other runspaces that a session integrity was lost
+                            $global:HostSyncHash.RunningSession = $false
                         }
                     }
 
