@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="icon.png"/>
+  <img src="Assets/icon.png"/>
 </p>
 
 # PowerRemoteDesktop
 
-<img src="demo.png" width="100%"/>
+<img src="Assets/demo.png" width="100%"/>
 
 *Power Remote Desktop* is a fully functional Remote Desktop Application entirely coded in PowerShell.
 
@@ -336,7 +336,4 @@ Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre
 cannot be held liable for the availability of, or the content located on or through it.
 Plus, any losses or damages occurred from using these contents or the internet
 generally.
-
-
-https://user-images.githubusercontent.com/2520298/150001826-fde96ce9-6ad8-46e4-9d13-a2c4e3e77f44.mp4
 
