@@ -67,9 +67,9 @@ You can install Power Remote Desktop from PowerShell Gallery. See PowerShell Gal
 
 Run the following commands:
 
-`Install-Module -Name PowerRemoteDesktop_Server -AllowPrerelease`
+`Install-Module -Name PowerRemoteDesktop_Server`
 
-`Install-Module -Name PowerRemoteDesktop_Viewer -AllowPrerelease`
+`Install-Module -Name PowerRemoteDesktop_Viewer`
 
 `AllowPrerelease` is mandatory when current version is marked as a *Prerelease*
 
