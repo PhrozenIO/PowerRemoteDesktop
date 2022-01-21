@@ -1118,13 +1118,7 @@ $global:DesktopStreamScriptBlock = {
         {   
             try
             {                                                           
-                $desktopImage = Get-DesktopImage -Screen $Param.Screen    
-                
-                try{
-                $HostSyncHash.host.ui.WriteLine(([System.Drawing.Image]::GetPixelFormatSize($desktopImage.PixelFormat)))
-                }catch{
-                    $HostSyncHash.host.ui.WriteLine($_)
-                }
+                $desktopImage = Get-DesktopImage -Screen $Param.Screen                
 
                 $imageStream = New-Object System.IO.MemoryStream
 
@@ -1938,7 +1932,7 @@ function Invoke-RemoteDesktopServer
                 # Waiting for Runspaces to finish their jobs.
                 while ($true)
                 {                
-                    $completed = $true                                        
+                    $completed = $true                   
                     
                     # Probe each existing runspaces
                     foreach ($runspace in $runspaces)
