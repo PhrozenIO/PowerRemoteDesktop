@@ -1070,11 +1070,16 @@ $global:DesktopStreamScriptBlock = {
                 $Screen.Bounds.Location.Y
             )
 
-            $bitmap = New-Object System.Drawing.Bitmap($size.Width, $size.Height)
+            $bitmap = New-Object System.Drawing.Bitmap(
+                $size.Width,
+                $size.Height,
+                [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
+            )
+
             $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
                         
             $graphics.CopyFromScreen($location, [System.Drawing.Point]::Empty, $size)
-            
+                        
             return $bitmap
         }        
         catch
@@ -1113,7 +1118,13 @@ $global:DesktopStreamScriptBlock = {
         {   
             try
             {                                                           
-                $desktopImage = Get-DesktopImage -Screen $Param.Screen                                                                   
+                $desktopImage = Get-DesktopImage -Screen $Param.Screen    
+                
+                try{
+                $HostSyncHash.host.ui.WriteLine(([System.Drawing.Image]::GetPixelFormatSize($desktopImage.PixelFormat)))
+                }catch{
+                    $HostSyncHash.host.ui.WriteLine($_)
+                }
 
                 $imageStream = New-Object System.IO.MemoryStream
 
