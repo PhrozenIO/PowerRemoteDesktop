@@ -1107,7 +1107,7 @@ $global:DesktopStreamScriptBlock = {
         $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
         $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, $imageQuality)
 
-        $packetSize = 4096   
+        $packetSize = 9216 # 9KiB   
             
         while ($global:HostSyncHash.RunningSession)
         {   
@@ -1142,31 +1142,18 @@ $global:DesktopStreamScriptBlock = {
                     try 
                     {                          
                         $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
-
-                        $totalBytesSent = 0
-
-                        $buffer = New-Object -TypeName byte[] -ArgumentList $packetSize
+                    
+                        $binaryReader = New-Object System.IO.BinaryReader($imageStream)
                         do
                         {       
-                            $bufferSize = ($imageStream.Length - $totalBytesSent)
+                            $bufferSize = ($imageStream.Length - $imageStream.Position)
                             if ($bufferSize -gt $packetSize)
                             {
                                 $bufferSize = $packetSize
-                            }    
-                            else
-                            {
-                                # Save some memory operations for creating objects.
-                                # Usually, bellow code is call when last chunk is being sent.
-                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
-                            }                                                    
+                            }                                                                      
 
-                            # (OPTIMIZATION IDEA): Try with BinaryStream to save the need of "byte[]"" buffer.
-                            $null = $imageStream.Read($buffer, 0, $buffer.Length)
-
-                            $Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
-
-                            $totalBytesSent += $bufferSize                                                               
-                        } until ($totalBytesSent -eq $imageStream.Length)                                                                   
+                            $Param.Client.SSLStream.Write($binaryReader.ReadBytes($bufferSize), 0, $bufferSize)                              
+                        } until ($imageStream.Position -eq $imageStream.Length)
                     }
                     catch
                     { break }
