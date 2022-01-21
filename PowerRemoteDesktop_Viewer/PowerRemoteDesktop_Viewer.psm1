@@ -51,7 +51,7 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.5.beta.6"
+$global:PowerRemoteDesktopVersion = "1.0.6"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -1431,7 +1431,8 @@ function Invoke-RemoteDesktopViewer
             })            
 
             $virtualDesktopSyncHash.VirtualDesktop.Form.Text = [string]::Format(
-                "Power Remote Desktop: {0}/{1} - {2}", 
+                "Power Remote Desktop v{0}: {1}/{2} - {3}", 
+                $global:PowerRemoteDesktopVersion,
                 $session.SessionInformation.Username,
                 $session.SessionInformation.MachineName,
                 $session.SessionInformation.WindowsVersion
