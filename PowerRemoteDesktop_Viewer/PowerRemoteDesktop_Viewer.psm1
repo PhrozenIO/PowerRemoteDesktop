@@ -51,7 +51,7 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.5.beta.6"
+$global:PowerRemoteDesktopVersion = "1.0.6"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -70,11 +70,6 @@ enum ClipboardMode {
     Receive = 2
     Send = 3
     Both = 4
-}
-
-enum TransportMode {
-    Raw = 1
-    Base64 = 2
 }
 
 function Write-Banner 
@@ -366,6 +361,7 @@ class ClientIO {
     [System.Net.Security.SslStream] $SSLStream = $null
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null
+    [System.IO.BinaryReader] $BinaryReader = $null
 
     ClientIO(
         <#
@@ -524,6 +520,8 @@ class ClientIO {
 
         $this.Reader = New-Object System.IO.StreamReader($this.SSLStream) 
 
+        $this.BinaryReader = New-Object System.IO.BinaryReader($this.SSLStream)
+
         Write-Verbose "Encrypted tunnel opened and ready for use."               
     }
 
@@ -616,7 +614,6 @@ class ClientIO {
             (-not ($sessionInformation.PSobject.Properties.name -contains "Username")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "WindowsVersion")) -or                      
             (-not ($sessionInformation.PSobject.Properties.name -contains "SessionId")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "TransportMode")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "Version")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "Screens")) -or
             (-not ($sessionInformation.PSobject.Properties.name -contains "ViewOnly"))
@@ -729,6 +726,11 @@ class ClientIO {
         if ($this.Reader)
         {
             $this.Reader.Close()
+        }
+
+        if ($this.BinaryReader)
+        {
+            $this.BinaryReader.Close()
         }
 
         if ($this.SSLStream)
@@ -879,11 +881,6 @@ class ViewerSession
 
 $global:VirtualDesktopUpdaterScriptBlock = {   
     
-    enum TransportMode {
-        Raw = 1
-        Base64 = 2
-    }
-
     function Invoke-SmoothResize
     {
         <#
@@ -899,6 +896,9 @@ $global:VirtualDesktopUpdaterScriptBlock = {
             .PARAMETER NewHeight
                 Define the height of new bitmap version.
 
+            .PARAMETER HighQuality
+                Activate high quality image resizing with a serious performance cost.
+
             .EXAMPLE
                 Invoke-SmoothResize -OriginalImage $myImage -NewWidth 1920 -NewHeight 1024
         #>
@@ -910,7 +910,9 @@ $global:VirtualDesktopUpdaterScriptBlock = {
             [int] $NewWidth,
 
             [Parameter(Mandatory=$true)]
-            [int] $NewHeight
+            [int] $NewHeight,
+
+            [bool] $HighQuality = $false
         )
         try
         {    
@@ -918,10 +920,13 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
             $resizedImage = [System.Drawing.Graphics]::FromImage($bitmap)
 
-            $resizedImage.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $resizedImage.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-            $resizedImage.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $resizedImage.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality 
+            if ($HighQuality)
+            {
+                $resizedImage.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+                $resizedImage.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+                $resizedImage.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $resizedImage.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality 
+            }
             
             $resizedImage.DrawImage($OriginalImage, 0, 0, $bitmap.Width, $bitmap.Height)
 
@@ -943,66 +948,39 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
     try
     {       
-        $packetSize = 4096
-
+        $packetSize = 9216 # 9KiB        
+        
         while ($true)
-        {                   
+        {      
             $stream = New-Object System.IO.MemoryStream
             try
-            {      
-                switch ([TransportMode] $Param.TransportMode)         
+            {                            
+                $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
+
+                $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
+
+                [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
+
+                $stream.SetLength($totalBufferSize)
+
+                $stream.position = 0              
+
+                $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
+                do
                 {
-                    ([TransportMode]::Raw)
-                    {                        
-                        $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
-
-                        $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
-
-                        [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
-
-                        $stream.SetLength($totalBufferSize)
-
-                        $stream.position = 0
-
-                        $totalBytesRead = 0
-
-                        $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
-                        do
-                        {
-                            $bufferSize = $totalBufferSize - $totalBytesRead
-                            if ($bufferSize -gt $packetSize)
-                            {
-                                $bufferSize = $packetSize
-                            }    
-                            else
-                            {
-                                # Save some memory operations for creating objects.
-                                # Usually, bellow code is call when last chunk is being sent.
-                                $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
-                            }                
-
-                            $Param.Client.SSLStream.Read($buffer, 0, $bufferSize)                    
-
-                            $null = $stream.Write($buffer, 0, $buffer.Length)
-
-                            $totalBytesRead += $bufferSize
-                        } until ($totalBytesRead -eq $totalBufferSize)
-                    }
-
-                    ([TransportMode]::Base64)
-                    {                        
-                        [byte[]] $buffer = [System.Convert]::FromBase64String(($Param.Client.Reader.ReadLine()))
-
-                        $stream.Write($buffer, 0, $buffer.Length)   
-                    }
-                }                    
+                    $bufferSize = $stream.Length - $stream.Position
+                    if ($bufferSize -gt $packetSize)
+                    {
+                        $bufferSize = $packetSize
+                    }    
+                            
+                    $null = $stream.Write($Param.Client.BinaryReader.ReadBytes($bufferSize), 0, $bufferSize)
+                } until ($stream.Position -eq $stream.Length)                 
 
                 $stream.Position = 0                                                                
 
                 if ($Param.RequireResize)
-                {
-                    #$image = [System.Drawing.Image]::FromStream($stream)
-
+                {                        
                     $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
 
                     $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $Param.VirtualDesktopWidth -NewHeight $Param.VirtualDesktopHeight                   
@@ -1019,9 +997,9 @@ $global:VirtualDesktopUpdaterScriptBlock = {
             finally
             {
                 $stream.Close()
-            }
-                
+            }                    
         }
+
     }
     finally
     {        
@@ -1453,7 +1431,8 @@ function Invoke-RemoteDesktopViewer
             })            
 
             $virtualDesktopSyncHash.VirtualDesktop.Form.Text = [string]::Format(
-                "Power Remote Desktop: {0}/{1} - {2}", 
+                "Power Remote Desktop v{0}: {1}/{2} - {3}", 
+                $global:PowerRemoteDesktopVersion,
                 $session.SessionInformation.Username,
                 $session.SessionInformation.MachineName,
                 $session.SessionInformation.WindowsVersion
@@ -1650,7 +1629,12 @@ function Invoke-RemoteDesktopViewer
 
                     $aEvent = (New-MouseEvent -X $X -Y $Y -Button $Button -Type $Type)                    
 
-                    $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))                    
+                    try
+                    {
+                        $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress)) 
+                    }  
+                    catch
+                    {}                 
                 }
 
                 function Send-VirtualKeyboard
@@ -1673,7 +1657,12 @@ function Invoke-RemoteDesktopViewer
 
                     $aEvent = (New-KeyboardEvent -Keys $KeyChain)                                
 
-                    $outputEventSyncHash.Writer.WriteLine(($aEvent  | ConvertTo-Json -Compress)) 
+                    try
+                    {
+                        $outputEventSyncHash.Writer.WriteLine(($aEvent  | ConvertTo-Json -Compress)) 
+                    }
+                    catch
+                    {}
                 }
 
                 $virtualDesktopSyncHash.VirtualDesktop.Form.Add_KeyPress(
@@ -1775,7 +1764,11 @@ function Invoke-RemoteDesktopViewer
                             Delta = $_.Delta
                         }
 
-                        $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))
+                        try
+                        {
+                            $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress))
+                        }
+                        catch {}
                     }
                 )  
             }
@@ -1787,8 +1780,7 @@ function Invoke-RemoteDesktopViewer
                 VirtualDesktopSyncHash = $virtualDesktopSyncHash                            
                 VirtualDesktopWidth = $virtualDesktopWidth 
                 VirtualDesktopHeight = $virtualDesktopHeight
-                RequireResize = $requireResize
-                TransportMode = [TransportMode] $session.SessionInformation.TransportMode                
+                RequireResize = $requireResize          
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  

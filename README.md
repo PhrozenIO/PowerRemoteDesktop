@@ -17,6 +17,8 @@ Tested on:
 * Windows 10 - PowerShell Version: 5.1.19041.1320
 * Windows 11 - PowerShell Version: 5.1.22000.282
 
+Current version: **1.0.6 Stable**
+
 ## Features
 
 https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b22c-a58e201bfe27.mp4
@@ -31,11 +33,29 @@ https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b
 * Multi-Screen (Monitor) support. If remote computer have more than one desktop screen, you can choose which desktop screen to capture.
 * View Only mode for demonstration. You can disable remote control abilities and just show your screen to remote peer.
 
-## What is still beta
+## Development Roadmap
 
-Version 1.0.5 Beta 6 is the last beta before final version.
+### Version 1.x (Now marked as stable)
 
-No more features will be added in 1.x version, just optimization and bug fix.
+Version `1.x` development is now over, only bug fix and improvements will be pushed to dedicated branch.
+
+### Version 2.x (In progress)
+
+Version `2.x` development is in progress with one new big feature and one huge improvement.
+
+#### Feature
+
+Motion detection for desktop capture. Instead of capturing the whole screen, only updated screen areas will be sent to viewer thus improving considerably the streaming speed and reducing CPU usage.
+
+#### Improvement
+
+A huge part of the protocol will be updated.
+
+The whole handshake progress will be cleaner and both Server and Viewer will respectively acknowledge their desired configuration.
+
+For example, instead of setting the image quality in server option (which makes no sense), it will be available from viewer option and sent to server.
+
+Same thing for image resizing, instead of resizing desktop image viewer-side, image will be resized server-side accordingly with viewer constraints.
 
 ## Installation
 
@@ -192,9 +212,6 @@ Supported options:
 * `Password` (**Mandatory**): Define password used during authentication process.
 * `CertificateFile` (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
 * `EncodedCertificate` (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
-* `TransportMode`(Default: `Raw`): Define which method to use to transfer streams.
-    * `Raw`: Transfer streams as raw bytes (recommended)
-    * `Base64`: Transfer streams as base64 encoded string
 * `TLSv1_3` (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
 * `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
 * `ImageQuality` (Default: `100`): JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.      
@@ -267,7 +284,7 @@ Detail                           Fingerprint
 
 ### 11 January 2022 (1.0.1 Beta 2)
 
-* Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances. Base64 Transport Method is still available through an option but disabled by default.
+* Desktop images are now transported in raw bytes instead of base64 string thus slightly improving performances.
 * Protocol has drastically changed. It is smoother to read and less prone to errors.
 * TLS v1.3 option added (Might not be supported by some systems).
 * Several code optimization, refactoring and fixes.
@@ -307,6 +324,11 @@ Detail                           Fingerprint
 * Virtual keyboard `]` and `)` correctly sent and interpreted.
 * Clipboard synchronization Viewer <-> Server added.
 * Server support a new option to only show desktop (Mouse moves, clicks, wheel and keyboard control is disabled in this mode).
+
+### 21 January 2022 (1.0.6)
+
+* TransportMode option removed.
+* Desktop streaming performance / speed increased.
 
 ### List of ideas and TODO
 

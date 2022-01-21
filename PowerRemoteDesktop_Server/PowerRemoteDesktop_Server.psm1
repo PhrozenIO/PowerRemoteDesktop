@@ -52,17 +52,13 @@ Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();[DllImport("User32.dll")] public static extern int LoadCursorA(int hInstance, int lpCursorName);[DllImport("User32.dll")] public static extern bool GetCursorInfo(IntPtr pci);' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.5.beta.6"
+$global:PowerRemoteDesktopVersion = "1.0.6"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
     ClipboardText = (Get-Clipboard -Raw)
+    RunningSession = $false
 })
-
-enum TransportMode {
-    Raw = 1
-    Base64 = 2
-}
 
 enum ClipboardMode {
     Disabled = 1
@@ -600,14 +596,12 @@ class ClientIO {
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null
     [System.Net.Security.SslStream] $SSLStream = $null  
-    [TransportMode] $TransportMode 
 
 
     ClientIO(
         [System.Net.Sockets.TcpClient] $Client,
         [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
-        [bool] $TLSv1_3,
-        [TransportMode] $TransportMode
+        [bool] $TLSv1_3
     ) {
         <#
             .SYNOPSIS
@@ -621,9 +615,6 @@ class ClientIO {
 
             .PARAMETER TLSv1_3
                 Define whether or not SSL/TLS v1.3 must be used.
-
-            .PARAMETER TransportMode
-                Define transport method for streams (Base64 or Raw)
         #>
 
         if ((-not $Client) -or (-not $Certificate))
@@ -632,7 +623,6 @@ class ClientIO {
         }
         
         $this.Client = $Client
-        $this.TransportMode = $TransportMode
 
         Write-Verbose "Create new SSL Stream..."
 
@@ -783,7 +773,6 @@ class ClientIO {
 
         $sessionInformation = Get-LocalMachineInformation
 
-        $sessionInformation | Add-Member -MemberType NoteProperty -Name "TransportMode" -Value $this.TransportMode
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $session.Id
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion     
         $sessionInformation | Add-Member -MemberType NoteProperty -Name "ViewOnly" -Value $ViewOnly    
@@ -854,7 +843,6 @@ class ServerIO {
     [string] $ListenAddress = "127.0.0.1"
     [int] $ListenPort = 2801
     [bool] $TLSv1_3 = $false    
-    [TransportMode] $TransportMode
     [string] $Password
     [bool] $ViewOnly = $false
 
@@ -888,9 +876,6 @@ class ServerIO {
             .PARAMETER TLSv1_3
                 Define if TLS v1.3 must be used.
 
-            .PARAMETER TransportMode
-                Define stream transport method.
-
             .PARAMETER ViewOnly
                 Define if mouse / keyboard is authorized.
         #>
@@ -898,7 +883,6 @@ class ServerIO {
         [string] $ListenAddress,
         [int] $ListenPort,
         [string] $Password,
-        [TransportMode] $TransportMode,
         [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
         [bool] $TLSv1_3,
         [bool] $ViewOnly
@@ -913,7 +897,6 @@ class ServerIO {
         $this.ListenPort = $ListenPort
         $this.TLSv1_3 = $TLSv1_3
         $this.Password = $Password
-        $this.TransportMode = $TransportMode
         $this.ViewOnly = $ViewOnly
 
         if (-not $Certificate)
@@ -997,8 +980,7 @@ class ServerIO {
         $client = [ClientIO]::New(            
             $socket,
             $this.Certificate,
-            $this.TLSv1_3,
-            $this.TransportMode
+            $this.TLSv1_3
         )
         try
         {            
@@ -1059,11 +1041,6 @@ class ServerIO {
 
 $global:DesktopStreamScriptBlock = {
     
-    enum TransportMode {
-        Raw = 1
-        Base64 = 2
-    }
-
     function Get-DesktopImage {	
         <#
             .SYNOPSIS
@@ -1093,11 +1070,16 @@ $global:DesktopStreamScriptBlock = {
                 $Screen.Bounds.Location.Y
             )
 
-            $bitmap = New-Object System.Drawing.Bitmap($size.Width, $size.Height)
+            $bitmap = New-Object System.Drawing.Bitmap(
+                $size.Width,
+                $size.Height,
+                [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
+            )
+
             $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
                         
             $graphics.CopyFromScreen($location, [System.Drawing.Point]::Empty, $size)
-            
+                        
             return $bitmap
         }        
         catch
@@ -1130,13 +1112,13 @@ $global:DesktopStreamScriptBlock = {
         $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
         $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, $imageQuality)
 
-        $packetSize = 4096        
-
-        while ($true)
-        {           
+        $packetSize = 9216 # 9KiB   
+            
+        while ($global:HostSyncHash.RunningSession)
+        {   
             try
             {                                                           
-                $desktopImage = Get-DesktopImage -Screen $Param.Screen                                                                   
+                $desktopImage = Get-DesktopImage -Screen $Param.Screen                
 
                 $imageStream = New-Object System.IO.MemoryStream
 
@@ -1163,50 +1145,20 @@ $global:DesktopStreamScriptBlock = {
                 {                    
                     $imageStream.position = 0 
                     try 
-                    {
-                        switch ([TransportMode] $Param.Client.TransportMode)
-                        {
-                            ([TransportMode]::Raw)
-                            {                                
-                                $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
+                    {                          
+                        $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
+                    
+                        $binaryReader = New-Object System.IO.BinaryReader($imageStream)
+                        do
+                        {       
+                            $bufferSize = ($imageStream.Length - $imageStream.Position)
+                            if ($bufferSize -gt $packetSize)
+                            {
+                                $bufferSize = $packetSize
+                            }                                                                      
 
-                                $totalBytesSent = 0
-
-                                $buffer = New-Object -TypeName byte[] -ArgumentList $packetSize
-                                do
-                                {       
-                                    $bufferSize = ($imageStream.Length - $totalBytesSent)
-                                    if ($bufferSize -gt $packetSize)
-                                    {
-                                        $bufferSize = $packetSize
-                                    }    
-                                    else
-                                    {
-                                        # Save some memory operations for creating objects.
-                                        # Usually, bellow code is call when last chunk is being sent.
-                                        $buffer = New-Object -TypeName byte[] -ArgumentList $bufferSize
-                                    }                                                    
-
-                                    # (OPTIMIZATION IDEA): Try with BinaryStream to save the need of "byte[]"" buffer.
-                                    $null = $imageStream.Read($buffer, 0, $buffer.Length)
-
-                                    $Param.Client.SSLStream.Write($buffer, 0, $buffer.Length)
-
-                                    $totalBytesSent += $bufferSize                                                               
-                                } until ($totalBytesSent -eq $imageStream.Length)  
-
-                                break
-                            }
-
-                            ([TransportMode]::Base64)
-                            {                                
-                                $Param.Client.Writer.WriteLine(
-                                    [System.Convert]::ToBase64String($imageStream.ToArray())
-                                )
-
-                                break
-                            }
-                        }                                                                    
+                            $Param.Client.SSLStream.Write($binaryReader.ReadBytes($bufferSize), 0, $bufferSize)                              
+                        } until ($imageStream.Position -eq $imageStream.Length)
                     }
                     catch
                     { break }
@@ -1323,7 +1275,7 @@ $global:IngressEventScriptBlock = {
     
     $keyboardSim = [KeyboardSim]::New()
 
-    while ($true)                    
+    while ($global:HostSyncHash.RunningSession)                    
     {             
         try 
         {            
@@ -1626,7 +1578,7 @@ $global:EgressEventScriptBlock = {
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    while ($true)
+    while ($global:HostSyncHash.RunningSession)
     {
         # Events that occurs every seconds needs to be placed bellow.
         # If no event has occured during this second we send a Keep-Alive signal to
@@ -1792,10 +1744,6 @@ function Invoke-RemoteDesktopServer
         .PARAMETER EncodedCertificate
             A valid X509 Certificate (With Private Key) encoded as a Base64 String.
 
-        .PARAMETER TransportMode
-            Tell server how to send desktop image to remote viewer. Best method is Raw Bytes but I decided to keep
-            the Base64 transport method as an alternative.
-
         .PARAMETER TLSv1_3
             Define whether or not TLS v1.3 must be used for communication with Viewer.
 
@@ -1828,7 +1776,6 @@ function Invoke-RemoteDesktopServer
         # Or
         [string] $EncodedCertificate = "", # 2
 
-        [TransportMode] $TransportMode = [TransportMode]::Raw,
         [switch] $TLSv1_3,        
         [switch] $DisableVerbosity,
         [int] $ImageQuality = 100,
@@ -1911,13 +1858,11 @@ function Invoke-RemoteDesktopServer
             }
         }
 
-        Write-Verbose $TransportMode
         # Create new server and listen
         $server = [ServerIO]::New(
             $ListenAddress,
             $ListenPort,
             $Password,
-            $TransportMode,
             $Certificate,
             $TLSv1_3,
             $ViewOnly  
@@ -1929,6 +1874,8 @@ function Invoke-RemoteDesktopServer
         {            
             try
             {                              
+                $global:HostSyncHash.RunningSession = $false
+
                 Write-Verbose "Server waiting for new incomming session..."
 
                 # Establish a new Remote Desktop Session.                                    
@@ -1939,7 +1886,9 @@ function Invoke-RemoteDesktopServer
                 # Otherwise a Timeout Exception will be raised.
                 # Actually, if someone else decide to connect in the mean time it will interrupt the whole session,
                 # Remote Viewer will then need to establish a new session from scratch.
-                $clientEvents = $server.PullClient(10 * 1000);           
+                $clientEvents = $server.PullClient(10 * 1000);      
+                
+                $global:HostSyncHash.RunningSession = $true
 
                 # Grab desired screen to capture
                 $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { $_.DeviceName -eq $server.Session.Screen }
@@ -1983,16 +1932,19 @@ function Invoke-RemoteDesktopServer
                 # Waiting for Runspaces to finish their jobs.
                 while ($true)
                 {                
-                    $completed = $true                    
+                    $completed = $true                   
                     
                     # Probe each existing runspaces
                     foreach ($runspace in $runspaces)
                     {
                         if (-not $runspace.AsyncResult.IsCompleted)
                         {
-                            $completed = $false
-
-                            break
+                            $completed = $false                     
+                        } 
+                        elseif ($global:HostSyncHash.RunningSession)
+                        {                        
+                            # Notifying other runspaces that a session integrity was lost
+                            $global:HostSyncHash.RunningSession = $false
                         }
                     }
 
