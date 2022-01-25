@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assets/icon.png"/>
+  <img src="Assets/iconv2.png"/>
 </p>
 
 # PowerRemoteDesktop
@@ -329,6 +329,17 @@ Detail                           Fingerprint
 
 * TransportMode option removed.
 * Desktop streaming performance / speed increased.
+
+### XX January 2022 (2.0.0)
+
+* Protocol was completely revisited, protocol is now more stable and modular.
+* Session concurrency is now supported, multiple viewers can connect at the same time to a server.
+* Possibility to stop the server using CTRL+C
+* Image quality is now requested by viewer.
+* Desktop resize is now made server-side.
+* Desktop resize can now be forced and requested by viewer.
+* Center virtual desktop glitch fixed.
+* Handshake calls (auth + session / worker negociation) will now timeout to avoid possible dead locks.
 
 ### List of ideas and TODO
 

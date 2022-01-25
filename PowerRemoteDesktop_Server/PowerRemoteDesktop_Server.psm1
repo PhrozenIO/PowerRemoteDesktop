@@ -52,12 +52,11 @@ Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();[DllImport("User32.dll")] public static extern int LoadCursorA(int hInstance, int lpCursorName);[DllImport("User32.dll")] public static extern bool GetCursorInfo(IntPtr pci);' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.6"
+$global:PowerRemoteDesktopVersion = "2.0.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
-    ClipboardText = (Get-Clipboard -Raw)
-    RunningSession = $false
+    ClipboardText = (Get-Clipboard -Raw)    
 })
 
 enum ClipboardMode {
@@ -128,8 +127,7 @@ function New-RandomPassword
 
         .DESCRIPTION
             Generate new password candidates until one candidate match complexity rules.
-            Generally only one iteration is enough but in some rare case it could be one or two more.
-            TODO: Better algorithm to avoid loop ?
+            Generally only one iteration is enough but in some rare case it could be one or two more.            
     #>
     do
     {
@@ -490,6 +488,39 @@ function Get-SHA512FromString
     return (Get-FileHash -InputStream $buffer -Algorithm SHA512).Hash
 }
 
+function Get-ScreenList()
+{
+    <#
+        .SYNOPSIS
+            Return an array of screen objects.
+
+        .DESCRIPTION
+            A screen refer to physical or virtual screen (monitor).                
+
+    #>
+    $result = @()
+
+    $screens = ([System.Windows.Forms.Screen]::AllScreens | Sort-Object -Property Primary -Descending)
+
+    $i = 0
+    foreach ($screen in $screens)
+    {
+        $i++
+
+        $result += New-Object -TypeName PSCustomObject -Property @{
+            Id = $i
+            Name = $screen.DeviceName
+            Primary = $screen.Primary
+            Width = $screen.Bounds.Width
+            Height = $screen.Bounds.Height
+            X = $screen.Bounds.X 
+            Y = $screen.Bounds.Y
+        }
+    }
+
+    return $result
+}
+
 function Resolve-AuthenticationChallenge
 {
     <#
@@ -528,518 +559,72 @@ function Resolve-AuthenticationChallenge
     return $solution
 }
 
-function Get-LocalMachineInformation
-{
-    <#
-        .SYNOPSIS
-            Generate an object containing few useful information about current machine.
+$global:DesktopStreamScriptBlock = {
 
-        .DESCRIPTION
-            Most important part is the target screen information. Without this information, remote viewer
-            will not be able to correctly draw / adjust desktop image and simulate mouse events.
-
-            This function is expected to be progressively updated with new required session information.        
-    #>
-    
-    $screens = @()
-
-    $i = 0
-    foreach ($screen in ([System.Windows.Forms.Screen]::AllScreens | Sort-Object -Property Primary -Descending))
+    function Invoke-SmoothResize
     {
-        $i++
-
-        $screens += New-Object -TypeName PSCustomObject -Property @{
-            Id = $i
-            Name = $screen.DeviceName
-            Primary = $screen.Primary
-            Width = $screen.Bounds.Width
-            Height = $screen.Bounds.Height
-            X = $screen.Bounds.X 
-            Y = $screen.Bounds.Y
-        }
-    }
-
-    return New-Object PSCustomObject -Property @{    
-        MachineName = [Environment]::MachineName
-        Username = [Environment]::UserName
-        WindowsVersion = [Environment]::OSVersion.VersionString
-        Screens = ($screens)
-    }
-}
-
-class ServerSession {
-    [string] $Id = ""
-    [string] $TiedAddress = ""
-    [string] $Screen = ""
-
-    ServerSession([string] $RemoteAddress) {
         <#
             .SYNOPSIS
-                Create a new session.
+                Output a resized version of input bitmap. The resize quality is quite fair.
+                
+            .PARAMETER OriginalImage
+                Input bitmap to resize.
 
-            .PARAMETER RemoteAddress
-                IP Address to be tied with session and avoid session impersonation outside of the
-                network.
-        #>
+            .PARAMETER NewWidth
+                Define the width of new bitmap version.
 
-        $this.Id = (SHA512FromString -String (-join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})))
-        $this.TiedAddress = $RemoteAddress        
-    }
+            .PARAMETER NewHeight
+                Define the height of new bitmap version.
 
-    [bool] CompareWith([string] $Id, [string] $RemoteAddress) {
-        return ($this.Id -eq $Id) -and ($this.TiedAddress -eq $RemoteAddress)
-    }
-}
-
-class ClientIO {  
-    [System.Net.Sockets.TcpClient] $Client = $null
-    [System.IO.StreamWriter] $Writer = $null
-    [System.IO.StreamReader] $Reader = $null
-    [System.Net.Security.SslStream] $SSLStream = $null  
-
-
-    ClientIO(
-        [System.Net.Sockets.TcpClient] $Client,
-        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
-        [bool] $TLSv1_3
-    ) {
-        <#
-            .SYNOPSIS
-                Class constructor.
-
-            .PARAMETER Client
-                TcpClient instance returned by listener.
-
-            .PARAMETER Certificate
-                X509 Certificate used for SSL/TLS encryption tunnel.
-
-            .PARAMETER TLSv1_3
-                Define whether or not SSL/TLS v1.3 must be used.
-        #>
-
-        if ((-not $Client) -or (-not $Certificate))
-        {
-            throw "ClientIO Class requires both a valid TcpClient and X509Certificate2."
-        }
-        
-        $this.Client = $Client
-
-        Write-Verbose "Create new SSL Stream..."
-
-        $this.SSLStream = New-Object System.Net.Security.SslStream($this.Client.GetStream(), $false)                
-
-        if ($TLSv1_3)
-        {
-            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
-        }
-        else {
-            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS12
-        }
-
-        Write-Verbose "Authenticate as server using ${TLSVersion}..."
-
-        $this.SSLStream.AuthenticateAsServer(
-            $Certificate,
-            $false,
-            $TLSVersion,
-            $false
-        )        
-
-        if (-not $this.SSLStream.IsEncrypted)
-        {
-            throw "Could not established an encrypted tunnel with remote peer."
-        }
-
-        $this.SSLStream.WriteTimeout = 5000
-
-        Write-Verbose "Open communication channels..."
-
-        $this.Writer = New-Object System.IO.StreamWriter($this.SSLStream)
-        $this.Writer.AutoFlush = $true        
-
-        $this.Reader = New-Object System.IO.StreamReader($this.SSLStream)      
-
-        Write-Verbose "Connection ready for use."  
-    }
-
-    [bool]Authentify([string] $Password) {
-        <#
-            .SYNOPSIS
-                Handle authentication process with remote peer.
-
-            .PARAMETER Password
-                Password used to validate challenge and grant access for a new Client.
+            .PARAMETER HighQuality
+                Activate high quality image resizing with a serious performance cost.
 
             .EXAMPLE
-                .Authentify("s3cr3t!")
-        #>        
-        try
-        { 
-            if (-not $Password) { 
-                throw "During client authentication, a password cannot be blank."
-            }
-
-            Write-Verbose "New authentication challenge..."
-
-            $candidate = -join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})
-            $candidate = Get-SHA512FromString -String $candidate
-
-            $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
-
-            Write-Verbose "@Challenge:"
-            Write-Verbose "Candidate: ""${candidate}"""
-            Write-Verbose "Solution: ""${challengeSolution}"""  
-            Write-Verbose "---"
-
-            $this.Writer.WriteLine($candidate)
-
-            Write-Verbose "Candidate sent to client, waiting for answer..."
-
-            $challengeReply = $this.Reader.ReadLine()
-
-            Write-Verbose "Replied solution: ""${challengeReply}"""
-
-            # Challenge solution is a Sha512 Hash so comparison doesn't need to be sensitive (-ceq or -cne)
-            if ($challengeReply -ne $challengeSolution)
-            {            
-                $this.Writer.WriteLine("KO.")
-
-                throw "Client challenge solution does not match our solution."
-            }
-            else
-            {            
-                $this.Writer.WriteLine("OK.")
-
-                Write-Verbose "Password Authentication Success"
-
-                return 280121 # True
-            }
-        }
-        catch 
-        {
-            throw "Password Authentication Failed. Reason: `r`n $($_)"
-        }
-    }
-    
-    [void]Hello([ServerSession] $Session) {
-        <#
-            .SYNOPSIS
-                This method is called if a sessio
-
-            .PARAMETER Session
-                A ServerSession Object Containing Viewer Sesion Information.            
+                Invoke-SmoothResize -OriginalImage $myImage -NewWidth 1920 -NewHeight 1024
         #>
+        param (
+            [Parameter(Mandatory=$true)]
+            [System.Drawing.Bitmap] $OriginalImage,
 
-        Write-Verbose "Session authentication with remote peer..."
-        try 
-        {
-            $receivedSessionId = $this.Reader.ReadLine()
+            [Parameter(Mandatory=$true)]
+            [int] $NewWidth,
 
-            Write-Verbose "Peer Session Id: ${receivedSessionId}."
+            [Parameter(Mandatory=$true)]
+            [int] $NewHeight,
 
-            if ($Session.CompareWith($receivedSessionId, $this.RemoteAddress()))
-            {            
-                $this.Writer.WriteLine("HELLO.")
-
-                Write-Verbose "Session authentication successful."
-            }
-            else
-            {
-                $this.Writer.WriteLine("BYE.")
-
-                throw "Session authentication failed."
-            }
-        }
-        catch
-        {
-            throw "Session Authentication Failed with extended error: `r`n $($_)"
-        }
-    }
-
-    [ServerSession]Hello([bool] $ViewOnly) {
-        <#
-            .SYNOPSIS
-                Initialize a new session with remote Viewer.
-        #>
-
-        Write-Verbose "Open a new session with remote peer..."
-
-        $session = [ServerSession]::New($this.RemoteAddress())
-
-        Write-Verbose "@Session"
-        Write-Verbose "Id: ""$($session.Id)"""
-        Write-Verbose "Addr: ""$($session.TiedAddress)"""
-        Write-Verbose "---"
-
-        $sessionInformation = Get-LocalMachineInformation
-
-        $sessionInformation | Add-Member -MemberType NoteProperty -Name "SessionId" -Value $session.Id
-        $sessionInformation | Add-Member -MemberType NoteProperty -Name "Version" -Value $global:PowerRemoteDesktopVersion     
-        $sessionInformation | Add-Member -MemberType NoteProperty -Name "ViewOnly" -Value $ViewOnly    
-
-        Write-Verbose "Sending Session Information with Local System Information..."
-
-        $this.Writer.WriteLine(($sessionInformation | ConvertTo-Json -Compress))
-
-        if ($sessionInformation.Screens.Length -gt 1)
-        {
-            Write-Verbose "Current system have $($sessionInformation.Screens.Length) Screens. Waiting for Remote Viewer to choose which screen to capture."
-
-            $screenName = $this.Reader.ReadLine()
-
-            $session.Screen = $screenName            
-        }
-
-        Write-Verbose "Handshake done."
-
-        return $session
-    }
-
-    [string]RemoteAddress() {
-        return $this.Client.Client.RemoteEndPoint.Address
-    }
-
-    [int]RemotePort() {
-        return $this.Client.Client.RemoteEndPoint.Port
-    }
-
-    [string]LocalAddress() {
-        return $this.Client.Client.LocalEndPoint.Address
-    }    
-
-    [int]LocalPort() {
-        return $this.Client.Client.LocalEndPoint.Port
-    }
-
-    [void]Close() {    
-        <#
-            .SYNOPSIS
-                Release streams and client.
-        #>
-        
-        if ($this.Writer)
-        {
-            $this.Writer.Close()
-        }
-
-        if ($this.Reader)
-        {
-            $this.Reader.Close()
-        }
-
-        if ($this.Stream)
-        {
-            $this.Stream.Close()
-        }
-
-        if ($this.Client)
-        {        
-            $this.Client.Close()
-        }
-    }
-}
-
-class ServerIO {
-    [string] $ListenAddress = "127.0.0.1"
-    [int] $ListenPort = 2801
-    [bool] $TLSv1_3 = $false    
-    [string] $Password
-    [bool] $ViewOnly = $false
-
-    [System.Net.Sockets.TcpListener] $Server = $null    
-    [System.IO.StreamWriter] $Writer = $null
-    [System.IO.StreamReader] $Reader = $null
-    [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate = $null    
-
-    [ServerSession] $Session = $null
-
-    ServerIO(
-        <#
-            .SYNOPSIS
-                Class constructor.
-
-            .PARAMETER ListenAddress
-                Define in which interface to listen.
-
-                127.0.0.1: Listen on localhost only.
-                0.0.0.0: Listen on all interfaces. 
-
-            .PARAMETER Password
-                Password used to authentify with remote peer.
-
-            .PARAMETER ListenPort
-                Define which TCP port to listen for new connection.
-
-            .PARAMETER Certificate
-                X509 Certificate used for SSL/TLS encryption tunnel.
-
-            .PARAMETER TLSv1_3
-                Define if TLS v1.3 must be used.
-
-            .PARAMETER ViewOnly
-                Define if mouse / keyboard is authorized.
-        #>
-
-        [string] $ListenAddress,
-        [int] $ListenPort,
-        [string] $Password,
-        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
-        [bool] $TLSv1_3,
-        [bool] $ViewOnly
-    ) {
-        # Check again in current class just in case.
-        if (-not (Test-PasswordComplexity -PasswordCandidate $Password))
-        {
-            throw "You must use a complex password for Password Authentication."
-        }
-
-        $this.ListenAddress = $ListenAddress
-        $this.ListenPort = $ListenPort
-        $this.TLSv1_3 = $TLSv1_3
-        $this.Password = $Password
-        $this.ViewOnly = $ViewOnly
-
-        if (-not $Certificate)
-        {
-            Write-Verbose "Custom X509 Certificate not specified."
-
-            $this.Certificate = Get-X509CertificateFromStore        
-            if (-not $this.Certificate)
-            {
-                Write-Verbose "Generate and Install a new local X509 Certificate."
-
-                New-DefaultX509Certificate
-                
-                Write-verbose "Certificate was successfully installed on local machine. Opening..."
-
-                $this.Certificate = Get-X509CertificateFromStore
-                if (-not $this.Certificate)
-                {
-                    throw "Could not open our new local certificate."
-                }
-            }
-            else
-            {
-                Write-Verbose "Default X509 Certificate was specified."            
-            }
-        }
-        else
-        {
-            $this.Certificate = $Certificate
-        }
-
-        Write-Verbose "@Certificate:"
-        Write-Verbose $this.Certificate
-        Write-Verbose "---"
-    }
-
-    [void]Listen() {
-        <#
-            .SYNOPSIS
-                Start listening on defined interface:port.
-        #>
-        Write-Verbose "Listen on ""$($this.ListenAddress):$($this.ListenPort)""..."
-
-        $this.Server = New-Object System.Net.Sockets.TcpListener($this.ListenAddress, $this.ListenPort)   
-
-        $this.Server.Start(2) # We are only waiting for two clients at the same time.
-
-        Write-Verbose "Listening..."
-    }
-
-    [ClientIO]PullClient([int]$Timeout) {
-        <#
-            .SYNOPSIS
-                Accept new client and associate this client with a new ClientIO Object.
-
-            .PARAMETER Timeout
-                By default AcceptTcpClient() will block current thread until a client connects.
-                
-                Using Timeout and a cool technique, you can stop waiting for client after a certain amount
-                of time (In Milliseconds)
-
-                If Timeout is greater than 0 (Milliseconds) then connection timeout is enabled.
-        #>
-
-        Write-Verbose "Pull Request..."
-
-        if ($Timeout -gt 0)
-        {
-            $socketReadList = [System.Collections.ArrayList]@($this.Server.Server)
-
-            [System.Net.Sockets.Socket]::Select($socketReadList, $null, $null, $Timeout * 1000)
-
-            if (-not $socketReadList.Contains($this.Server.Server))
-            {
-                throw "Pull client timeout."
-            }
-        }
-
-        $socket = $this.Server.AcceptTcpClient()          
-
-        $client = [ClientIO]::New(            
-            $socket,
-            $this.Certificate,
-            $this.TLSv1_3
+            [bool] $HighQuality = $false
         )
         try
-        {            
-            Write-Verbose "New client socket connected: ""$($client.RemoteAddress())"". Proceed password authentication..."            
+        {    
+            $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $NewWidth, $NewHeight
 
-            # STEP 1 : Authentication
-            # When Password Authentication Fail, it throw an exception. But as someone paranoid I also want to be
-            # that function returns magic token.
-            $authenticated = ($client.Authentify($this.Password) -eq 280121)
-            if (-not $authenticated)
+            $resizedImage = [System.Drawing.Graphics]::FromImage($bitmap)
+
+            if ($HighQuality)
             {
-                throw "Access Denied."
+                $resizedImage.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+                $resizedImage.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+                $resizedImage.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $resizedImage.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality 
             }
             
-            if ($this.Session)
+            $resizedImage.DrawImage($OriginalImage, 0, 0, $bitmap.Width, $bitmap.Height)
+
+            return $bitmap
+        }
+        finally
+        {
+            if ($OriginalImage)
             {
-                # STEP 2 : Session Authentication
-                $client.Hello($this.Session)                
+                $OriginalImage.Dispose()
             }
-            else 
+
+            if ($resizedImage)
             {
-                # STEP 2 : Create new Session                    
-                $this.Session = $client.Hello($this.ViewOnly)    
-            }                        
-        }
-        catch
-        {
-            $this.CloseSession()
-
-            $client.Close()
-
-            throw $_
-        }
-
-        return $client
-    }
-
-    [void]CloseSession() {
-        <#
-            Terminate an active Server Session
-        #>
-        $this.Session = $null
-    }
-
-    [void]Close() {
-        <#
-            .SYNOPSIS
-                Stop waiting for new clients (Stop listening)
-        #>
-        if ($this.Server)
-        {
-            Write-Verbose "Stop listening."
-
-            $this.Server.Stop()
+                $resizedImage.Dispose()
+            }
         }
     }
-}
-
-$global:DesktopStreamScriptBlock = {
     
     function Get-DesktopImage {	
         <#
@@ -1097,12 +682,18 @@ $global:DesktopStreamScriptBlock = {
             }
         }
     } 
+    
+    # Initialize locally desktop streaming configuration
+    # "SafeHash" is a synchronized object, we must avoid accessing this object regularly to improve performance.
+    $imageQuality = $Param.SafeHash.ViewerConfiguration.ImageCompressionQuality
 
-    $imageQuality = 100
-    if ($Param.ImageQuality -ge 0 -and $Param.ImageQuality -lt 100)
-    {
-        $imageQuality = $Param.ImageQuality
-    }
+    $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { 
+        $_.DeviceName -eq $Param.SafeHash.ViewerConfiguration.ScreenName 
+    }       
+
+    $requireResize = $Param.SafeHash.ViewerConfiguration.ResizeDesktop()
+    $resizeWidth = $Param.SafeHash.ViewerConfiguration.ExpectDesktopWidth
+    $resizeHeight = $Param.SafeHash.ViewerConfiguration.ExpectDesktopHeight
     try
     {
         [System.IO.MemoryStream] $oldImageStream = New-Object System.IO.MemoryStream
@@ -1114,11 +705,15 @@ $global:DesktopStreamScriptBlock = {
 
         $packetSize = 9216 # 9KiB   
             
-        while ($global:HostSyncHash.RunningSession)
-        {   
+        while ($true)
+        {               
             try
             {                                                           
-                $desktopImage = Get-DesktopImage -Screen $Param.Screen                
+                $desktopImage = Get-DesktopImage -Screen $screen                    
+                if ($requireResize)
+                {                                            
+                    $desktopImage = Invoke-SmoothResize -OriginalImage $desktopImage -NewWidth $resizeWidth -NewHeight $resizeHeight
+                }
 
                 $imageStream = New-Object System.IO.MemoryStream
 
@@ -1145,9 +740,9 @@ $global:DesktopStreamScriptBlock = {
                 {                    
                     $imageStream.position = 0 
                     try 
-                    {                          
-                        $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)                        
-                    
+                    {            
+                        $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)    
+                                        
                         $binaryReader = New-Object System.IO.BinaryReader($imageStream)
                         do
                         {       
@@ -1275,7 +870,7 @@ $global:IngressEventScriptBlock = {
     
     $keyboardSim = [KeyboardSim]::New()
 
-    while ($global:HostSyncHash.RunningSession)                    
+    while ($true)                    
     {             
         try 
         {            
@@ -1578,7 +1173,7 @@ $global:EgressEventScriptBlock = {
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    while ($global:HostSyncHash.RunningSession)
+    while ($true)
     {
         # Events that occurs every seconds needs to be placed bellow.
         # If no event has occured during this second we send a Keep-Alive signal to
@@ -1699,6 +1294,888 @@ function New-RunSpace
     }
 }
 
+
+class ClientIO {  
+    [System.Net.Sockets.TcpClient] $Client = $null
+    [System.IO.StreamWriter] $Writer = $null
+    [System.IO.StreamReader] $Reader = $null
+    [System.Net.Security.SslStream] $SSLStream = $null  
+
+
+    ClientIO(
+        [System.Net.Sockets.TcpClient] $Client,
+        [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
+        [bool] $TLSv1_3
+    ) {
+        if ((-not $Client) -or (-not $Certificate))
+        {
+            throw "ClientIO Class requires both a valid TcpClient and X509Certificate2."
+        }
+        
+        $this.Client = $Client
+
+        Write-Verbose "Create new SSL Stream..."
+
+        $this.SSLStream = New-Object System.Net.Security.SslStream($this.Client.GetStream(), $false)                
+
+        if ($TLSv1_3)
+        {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
+        }
+        else {
+            $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS12
+        }
+
+        Write-Verbose "Authenticate as server using ${TLSVersion}..."
+
+        $this.SSLStream.AuthenticateAsServer(
+            $Certificate,
+            $false,
+            $TLSVersion,
+            $false
+        )        
+
+        if (-not $this.SSLStream.IsEncrypted)
+        {
+            throw "Could not established an encrypted tunnel with remote peer."
+        }
+
+        $this.SSLStream.WriteTimeout = 5000
+        $this.SSLStream.ReadTimeout = [System.Threading.Timeout]::Infinite # Default
+
+        Write-Verbose "Open communication channels..."
+
+        $this.Writer = New-Object System.IO.StreamWriter($this.SSLStream)
+        $this.Writer.AutoFlush = $true        
+
+        $this.Reader = New-Object System.IO.StreamReader($this.SSLStream)      
+
+        Write-Verbose "Connection ready for use."  
+    }
+
+    [bool] Authentify([string] $Password) {
+        <#
+            .SYNOPSIS
+                Handle authentication process with remote peer.
+
+            .PARAMETER Password
+                Password used to validate challenge and grant access for a new Client.
+
+            .EXAMPLE
+                .Authentify("s3cr3t!")
+        #>        
+        try
+        { 
+            if (-not $Password) { 
+                throw "During client authentication, a password cannot be blank."
+            }
+
+            Write-Verbose "New authentication challenge..."
+
+            $candidate = -join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})
+            $candidate = Get-SHA512FromString -String $candidate
+
+            $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
+
+            Write-Verbose "@Challenge:"
+            Write-Verbose "Candidate: ""${candidate}"""
+            Write-Verbose "Solution: ""${challengeSolution}"""  
+            Write-Verbose "---"
+
+            $this.Writer.WriteLine($candidate)
+
+            Write-Verbose "Candidate sent to client, waiting for answer..."
+
+            $challengeReply = $this.ReadLine(5 * 1000)
+
+            Write-Verbose "Replied solution: ""${challengeReply}"""
+
+            # Challenge solution is a Sha512 Hash so comparison doesn't need to be sensitive (-ceq or -cne)
+            if ($challengeReply -ne $challengeSolution)
+            {            
+                $this.Writer.WriteLine("KO.")
+
+                throw "Client challenge solution does not match our solution."
+            }
+            else
+            {            
+                $this.Writer.WriteLine("OK.")
+
+                Write-Verbose "Password Authentication Success"
+
+                return 280121 # True
+            }
+        }
+        catch 
+        {
+            throw "Password Authentication Failed. Reason: `r`n $($_)"
+        }
+    }
+
+    [string] RemoteAddress() {
+        return $this.Client.Client.RemoteEndPoint.Address
+    }
+
+    [int] RemotePort() {
+        return $this.Client.Client.RemoteEndPoint.Port
+    }
+
+    [string] LocalAddress() {
+        return $this.Client.Client.LocalEndPoint.Address
+    }    
+
+    [int] LocalPort() {
+        return $this.Client.Client.LocalEndPoint.Port
+    }
+
+    [string] ReadLine([int] $Timeout) 
+    {
+        <#
+            .SYNOPSIS
+                Read string message from remote peer with timeout support.
+
+            .PARAMETER Timeout
+                Define the maximum time (in milliseconds) to wait for remote peer message.
+        #>
+        $defautTimeout = $this.SSLStream.ReadTimeout
+        try
+        {
+            $this.SSLStream.ReadTimeout = $Timeout
+
+            return $this.Reader.ReadLine()        
+        }
+        finally
+        {
+            $this.SSLStream.ReadTimeout = $defautTimeout
+        }        
+    }
+
+    [string] ReadLine() 
+    {
+        <#
+            .SYNOPSIS
+                Shortcut to Reader ReadLine method. No timeout support.
+        #>
+        return $this.Reader.ReadLine()
+    }
+
+    [void] WriteJson([PSCustomObject] $Object)
+    {
+        <#
+            .SYNOPSIS
+                Transform a PowerShell Object as a JSON Representation then send to remote
+                peer.
+
+            .PARAMETER Object
+                A PowerShell Object to be serialized as JSON String.
+        #>
+
+        $this.Writer.WriteLine(($Object | ConvertTo-Json -Compress))
+    }
+
+    [void] WriteLine([string] $Value)
+    {
+        $this.Writer.WriteLine($Value)
+    }
+
+    [PSCustomObject] ReadJson([int] $Timeout)
+    {
+        <#
+            .SYNOPSIS
+                Read json string from remote peer and attempt to deserialize as a PowerShell Object.
+
+            .PARAMETER Timeout
+                Define the maximum time (in milliseconds) to wait for remote peer message.
+        #>
+        return ($this.ReadLine($Timeout) | ConvertFrom-Json)
+    }
+
+    [PSCustomObject] ReadJson()
+    {
+        <#
+            .SYNOPSIS
+                Alternative to ReadJson without timeout support.                
+        #>
+        return ($this.ReadLine() | ConvertFrom-Json)    
+    }
+
+    [void] Close() {    
+        <#
+            .SYNOPSIS
+                Release streams and client.
+        #>
+        
+        if ($this.Writer)
+        {
+            $this.Writer.Close()
+        }
+
+        if ($this.Reader)
+        {
+            $this.Reader.Close()
+        }
+
+        if ($this.Stream)
+        {
+            $this.Stream.Close()
+        }
+
+        if ($this.Client)
+        {        
+            $this.Client.Close()
+        }
+    }
+}
+
+class ServerIO {        
+    [System.Net.Sockets.TcpListener] $Server = $null    
+    [System.IO.StreamWriter] $Writer = $null
+    [System.IO.StreamReader] $Reader = $null    
+
+    ServerIO() 
+    {
+        
+    }
+
+    [void] Listen(
+        [string] $ListenAddress,
+        [int] $ListenPort
+    ) 
+    {                         
+        if ($this.Server)
+        {
+            $this.Close()            
+        }        
+
+        $this.Server = New-Object System.Net.Sockets.TcpListener(
+            $ListenAddress,
+            $ListenPort
+        )            
+                
+        $this.Server.Start()
+
+        Write-Verbose "Listening on ""$($ListenAddress):$($ListenPort)""..."                    
+    }
+
+    [ClientIO] PullClient(
+        [string] $Password,
+
+        [System.Security.Cryptography.X509Certificates.X509Certificate2]
+        $Certificate,
+
+        [bool] $UseTLSv13,
+        [int] $Timeout
+    ) {
+        <#
+            .SYNOPSIS
+                Accept new client and associate this client with a new ClientIO Object.
+
+            .PARAMETER Timeout
+                By default AcceptTcpClient() will block current thread until a client connects.
+                
+                Using Timeout and a cool technique, you can stop waiting for client after a certain amount
+                of time (In Milliseconds)                
+
+                If Timeout is greater than 0 (Milliseconds) then connection timeout is enabled.
+
+                Other method: AsyncWaitHandle.WaitOne([timespan])'h:m:s') -eq $true|$false with BeginAcceptTcpClient(...)
+        #>
+            
+        if (-not (Test-PasswordComplexity -PasswordCandidate $Password))
+        {
+            throw "Client socket pull request requires a complex password."
+        }
+
+        if ($Timeout -gt 0)
+        {
+            $socketReadList = [System.Collections.ArrayList]@($this.Server.Server)
+
+            [System.Net.Sockets.Socket]::Select($socketReadList, $null, $null, $Timeout * 1000)
+
+            if (-not $socketReadList.Contains($this.Server.Server))
+            {
+                throw "Pull timeout."
+            }
+        }
+
+        $socket = $this.Server.AcceptTcpClient()          
+
+        $client = [ClientIO]::New(            
+            $socket,
+            $Certificate,
+            $UseTLSv13
+        )
+        try
+        {            
+            Write-Verbose "New client socket connected from: ""$($client.RemoteAddress())""."              
+
+            $authenticated = ($client.Authentify($Password) -eq 280121)
+            if (-not $authenticated)
+            {
+                throw "Access Denied."
+            }                               
+        }
+        catch
+        {
+            $client.Close()
+
+            throw $_
+        }
+
+        return $client
+    }
+
+    [bool] Active()
+    {
+        if ($this.Server)
+        {
+            return $this.Server.Active
+        }
+        else {
+            return $false
+        }
+    }
+
+    [void] Close() 
+    {
+        <#
+            .SYNOPSIS
+                Stop listening and release TcpListener object.
+        #>
+        if ($this.Server)
+        {         
+            if ($this.Server.Active)
+            {
+                $this.Server.Stop()
+            }
+
+            $this.Server = $null
+
+            Write-Verbose "Server is now released."
+        }
+    }
+}
+
+class ViewerConfiguration {
+    [string] $ScreenName = ""    
+    [int] $ExpectDesktopWidth = 0
+    [int] $ExpectDesktopHeight = 0
+    [int] $ImageCompressionQuality = 100    
+
+    [bool] ResizeDesktop()
+    {
+        return $this.ExpectDesktopHeight -gt 0 -or $this.ExpectDesktopWidth -gt 0
+    }
+
+    [void] SetImageCompressionQuality([int] $Value)
+    {
+        if ($Value -lt 0)
+        {
+            $Value = 0
+        }
+
+        if ($Value -gt 100)
+        {
+            $Value = 100
+        }
+
+        $this.ImageCompressionQuality = $Value
+    }
+}
+
+class ServerSession {
+    [string] $Id = ""   
+    [bool] $ViewOnly = $false
+    [ClipboardMode] $Clipboard = [ClipboardMode]::Both
+    
+    [System.Collections.Generic.List[PSCustomObject]]
+    $WorkerThreads = @()
+
+    [System.Collections.Generic.List[ClientIO]]
+    $Clients = @()
+        
+    $SafeHash = [HashTable]::Synchronized(@{
+        ViewerConfiguration = [ViewerConfiguration]::New()
+    })
+
+    ServerSession(
+        [bool] $ViewOnly,
+        [ClipboardMode] $Clipboard
+    ) 
+    {
+        $this.Id = (SHA512FromString -String (-join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})))    
+        
+        $this.ViewOnly = $ViewOnly
+        $this.Clipboard = $Clipboard
+    }
+
+    [bool] CompareSession([string] $Id) 
+    {
+        <#
+            .SYNOPSIS
+                Compare two session object. In this case just compare session id string.
+
+            .PARAMETER Id
+                A session id to compare with current session object.
+        #>
+        return ($this.Id -ceq $Id)
+    }
+
+    [void] NewDesktopWorker([ClientIO] $Client)
+    {
+        <#
+            .SYNOPSIS
+                Create a new desktop streaming worker (Runspace/Thread).
+
+            .PARAMETER Client
+                An established connection with remote peer as a ClientIO Object.
+        #>
+        $param = New-Object -TypeName PSCustomObject -Property @{                      
+            Client = $Client            
+            SafeHash = $this.SafeHash
+        }
+        
+        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param))       
+        
+        ###
+
+        $this.Clients.Add($Client)
+    }
+
+    [void] NewEventWorker([ClientIO] $Client)
+    {
+        <#
+            .SYNOPSIS
+                Create a new egress / ingress worker (Runspace/Thread) to process outgoing / incomming events.
+
+            .PARAMETER Client
+                An established connection with remote peer as a ClientIO Object.
+        #>
+
+        $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
+            Writer = $Client.Writer
+            Clipboard = $this.Clipboard
+        }
+
+        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param))    
+        
+        ###
+
+        $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
+            Reader = $Client.Reader   
+            Clipboard = $this.Clipboard
+            ViewOnly = $this.ViewOnly          
+        }
+                        
+        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)) 
+
+        ###
+
+        $this.Clients.Add($Client)
+    }
+
+    [void] Close()
+    {
+        <#
+            .SYNOPSIS
+                Close components associated with current session (Ex: runspaces, sockets etc..)
+        #>
+
+        # Close connection with remote peers associated with this session        
+        foreach ($client in $this.Clients)
+        {
+            $client.Close()
+        }
+
+        $this.Clients.Clear()
+
+        # TODO: wait for workers to finish their jobs
+
+        # Terminate runspaces associated with this session
+        foreach ($worker in $this.WorkerThreads)
+        {
+            $null = $worker.PowerShell.EndInvoke($worker.AsyncResult)
+            $worker.PowerShell.Runspace.Dispose()                                      
+            $worker.PowerShell.Dispose()                    
+        }    
+        $this.WorkerThreads.Clear() 
+    }
+}
+
+class SessionManager {    
+    [ServerIO] $Server = $null
+
+    [System.Collections.Generic.List[ServerSession]]
+    $Sessions = @()        
+
+    [string] $Password = ""    
+
+    [System.Security.Cryptography.X509Certificates.X509Certificate2] 
+    $Certificate = $null
+
+    [bool] $ViewOnly = $false
+    [bool] $UseTLSv13 = $false
+
+    [ClipboardMode] $Clipboard = [ClipboardMode]::Both
+
+    SessionManager(
+        [string] $Password,
+
+        [System.Security.Cryptography.X509Certificates.X509Certificate2] 
+        $Certificate,
+
+        [bool] $ViewOnly,
+        [bool] $UseTLSv13,
+        [ClipboardMode] $Clipboard
+    )
+    {
+        Write-Verbose "Initialize new session manager..."
+
+        if (-not (Test-PasswordComplexity -PasswordCandidate $Password))
+        {
+            throw "Session manager requires a complex password for viewer-authentication."
+        }
+
+        $this.Password = $Password        
+        $this.ViewOnly = $ViewOnly
+        $this.UseTLSv13 = $UseTLSv13
+        $this.Clipboard = $Clipboard
+
+        if (-not $Certificate)
+        {
+            Write-Verbose "Custom X509 Certificate not specified."
+
+            $this.Certificate = Get-X509CertificateFromStore        
+            if (-not $this.Certificate)
+            {
+                Write-Verbose "Generate and Install a new local X509 Certificate."
+
+                New-DefaultX509Certificate
+                
+                Write-verbose "Certificate was successfully installed on local machine. Opening..."
+
+                $this.Certificate = Get-X509CertificateFromStore
+                if (-not $this.Certificate)
+                {
+                    throw "Could not open our new local certificate."
+                }
+            }
+            else
+            {
+                Write-Verbose "Default X509 Certificate was specified."            
+            }
+        }
+        else
+        {
+            $this.Certificate = $Certificate
+        }
+
+        Write-Verbose "@Certificate:"
+        Write-Verbose $this.Certificate
+        Write-Verbose "---"
+
+        Write-Verbose "Session manager initialized."
+    }
+
+    [void] OpenServer(
+        [string] $ListenAddress,
+        [int] $ListenPort        
+    )
+    {    
+        <#
+            .SYNOPSIS
+                Create a new server object then start listening on desired interface / port.
+
+            .PARAMETER ListenAddress
+                Desired interface to listen for new peers.
+                "127.0.0.1" = Only listen for localhost peers.
+                "0.0.0.0" = Listen on all interfaces for peers.
+
+            .PARAMETER ListenPort
+                TCP Port to listen for new peers (0-65535)
+        #>
+
+        $this.CloseServer()        
+        try
+        {
+            $this.Server = [ServerIO]::New()
+
+            $this.Server.Listen(
+                $ListenAddress,
+                $ListenPort
+            )
+        }
+        catch
+        {
+            $this.CloseServer()
+
+            throw $_
+        }
+    }
+
+    [ServerSession] GetSession([string] $SessionId)
+    {
+        <#
+            .SYNOPSIS
+                Find a session by its id on current session pool.
+
+            .PARAMETER SessionId
+                Session id to search in current pool.
+        #>
+        foreach ($session in $this.Sessions)
+        {
+            if ($session.CompareSession($SessionId))
+            {
+                return $session
+            }
+        }
+
+        return $null
+    }
+
+    [void] ProceedNewSessionRequest([ClientIO] $Client)
+    {        
+        <#
+            .SYNOPSIS
+                Attempt a new session request with remote peer.
+
+            .DESCRIPTION
+                Session creation is now requested from a dedicated client instead of using
+                same client as for desktop streaming.
+
+                I prefer to use a dedicated client to have a more cleaner session establishement 
+                process.
+
+                Session request will basically generate a new session object, send some information 
+                about current server marchine state then wait for viewer acknowledgement with desired
+                configuration (Ex: desired screen to capture, quality and local size constraints).
+
+                When session creation is done, client is then closed.                
+                
+        #>
+        try
+        {                           
+            Write-Verbose "Remote peer as requested a new session..."
+
+            $session = [ServerSession]::New($this.ViewOnly, $this.Clipboard)
+
+            Write-Verbose "@ServerSession"
+            Write-Verbose "Id: ""$($session.Id)"""            
+            Write-Verbose "---"
+
+            $serverInformation = New-Object PSCustomObject -Property @{    
+                # Session information and configuration
+                SessionId = $session.Id
+                Version = $global:PowerRemoteDesktopVersion
+                ViewOnly = $this.ViewOnly
+
+                # Local machine information
+                MachineName = [Environment]::MachineName
+                Username = [Environment]::UserName
+                WindowsVersion = [Environment]::OSVersion.VersionString
+                Screens = Get-ScreenList
+            }            
+
+            Write-Verbose "Sending server information to remote peer..."
+
+            Write-Verbose "@ServerInformation:"
+            Write-Verbose $serverInformation
+            Write-Verbose "---"
+
+            $client.WriteJson($serverInformation)
+
+            Write-Verbose "Waiting for viewer expectation..."
+            
+            if ($serverInformation.Screens.Length -gt 1)
+            {
+                # Client have a maximum of 1 Minute to reply with viewer expectation.
+                # This timeout is high to give enough time to the end-user to choose which screen he wants to use
+                $timeout = 60 * 1000
+            }
+            else
+            {
+                $timeout = 5 * 1000
+            }
+
+            $viewerExpectation = $client.ReadJson($timeout)
+
+            if ($viewerExpectation.PSobject.Properties.name -contains "ScreenName")
+            {
+                $session.SafeHash.ViewerConfiguration.ScreenName = $viewerExpectation.ScreenName    
+            }
+            
+            if ($viewerExpectation.PSobject.Properties.name -contains "ExpectDesktopWidth")
+            {
+                $session.SafeHash.ViewerConfiguration.ExpectDesktopWidth = $viewerExpectation.ExpectDesktopWidth
+            }
+
+            if ($viewerExpectation.PSobject.Properties.name -contains "ExpectDesktopHeight")
+            {
+                $session.SafeHash.ViewerConfiguration.ExpectDesktopHeight = $viewerExpectation.ExpectDesktopHeight
+            }
+
+            if ($viewerExpectation.PSobject.Properties.name -contains "ImageCompressionQuality")
+            {
+                $session.SafeHash.ViewerConfiguration.ImageCompressionQuality = $viewerExpectation.ImageCompressionQuality
+            }
+
+            Write-Verbose "New session successfully created."
+
+            $this.Sessions.Add($session)    
+            
+            $client.WriteLine("OK")
+        }
+        catch
+        {
+            $session = $null
+
+            throw $_
+        }
+        finally
+        {
+            if ($client)
+            {
+                $client.Close()
+            }
+        }
+    }   
+
+    [void] ProceedAttachRequest([ClientIO] $Client)
+    {    
+        <#
+            .SYNOPSIS
+                Attach a new peer to an existing session then dispatch this new peer as a 
+                new stateful worker.
+
+            .PARAMETER Client
+                An established connection with remote peer as a ClientIO Object.
+        #>
+        Write-Verbose "Proceed new session attach request..."
+
+        $session = $this.GetSession($Client.ReadLine(5 * 1000))
+        if (-not $session)
+        {
+            $Client.WriteLine("SESS_NOTFOUND")
+
+            throw "Session object matchin given id could not be find in active session pool."
+        }
+
+        Write-Verbose "Client successfully attached to session: ""$($session.id)"""
+
+        $Client.WriteLine("SESS_OK")
+
+        $workerKind = $Client.ReadLine(5 * 1000)
+
+        switch ($workerKind)
+        {
+            "WRKER_DESKTOP"
+            {
+                $session.NewDesktopWorker($Client)
+
+                break
+            }
+
+            "WRKER_EVENT"
+            {                            
+                $session.NewEventWorker($Client) # I/O
+
+                break
+            }            
+        }
+    }
+    
+    [void] ListenForWorkers()
+    {        
+        while ($true)
+        {
+            if (-not $this.Server -or $this.Server.Active())
+            {
+                throw "A server must be active to listen for new workers."
+            }
+
+            $client = $null
+            try 
+            {
+                $client = $this.Server.PullClient(
+                    $this.Password,
+                    $this.Certificate,
+                    $this.UseTLSv13,
+                    5 * 1000
+                )
+
+                $requestMode = $client.ReadLine(5 * 1000)
+
+                switch ($requestMode)
+                {
+                    "REQ_SESSION"
+                    {
+                        $this.ProceedNewSessionRequest($client)
+
+                        break
+                    }
+
+                    "REQ_ATTACH"
+                    {
+                        $this.ProceedAttachRequest($client)
+
+                        break
+                    }
+
+                    default:
+                    {
+                        $client.WriteLine("BAD_REQ")
+
+                        throw "Bad request."
+                    }
+                }                
+            }
+            catch 
+            {
+                if ($client)
+                {
+                    $client.Close()
+
+                    $client = $null
+                }
+            }
+            finally
+            { }
+        }
+    }
+
+    [void] CloseServer()
+    {
+        <#
+            .SYNOPSIS
+                Close all existing sessions and dispose server.
+        #>
+
+        $this.CloseSessions()
+
+        if ($this.Server)
+        {
+            $this.Server.Close()
+
+            $this.Server = $null            
+        }
+    }
+
+    [void] CloseSessions()
+    {
+        <#
+            .SYNOPSIS
+                Close all existing sessions
+        #>
+
+        foreach ($session in $this.Sessions)
+        {
+            $session.Close()            
+        }
+
+        $this.Sessions.Clear()
+    }
+}
+
 function Test-Administrator
 {
     <#
@@ -1748,12 +2225,7 @@ function Invoke-RemoteDesktopServer
             Define whether or not TLS v1.3 must be used for communication with Viewer.
 
         .PARAMETER DisableVerbosity
-            Disable verbosity (not recommended)
-
-        .PARAMETER ImageQuality
-            JPEG Compression level from 0 to 100
-                0 = Lowest quality.
-                100 = Highest quality.
+            Disable verbosity (not recommended)        
 
         .PARAMETER Clipboard
             Define clipboard synchronization rules:
@@ -1769,7 +2241,10 @@ function Invoke-RemoteDesktopServer
 
     param (
         [string] $ListenAddress = "0.0.0.0", 
+
+        [ValidateRange(0, 65535)]
         [int] $ListenPort = 2801,
+
         [string] $Password = "",
 
         [string] $CertificateFile = "", # 1
@@ -1778,13 +2253,9 @@ function Invoke-RemoteDesktopServer
 
         [switch] $TLSv1_3,        
         [switch] $DisableVerbosity,
-        [int] $ImageQuality = 100,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
         [switch] $ViewOnly
     )
-
-
-    [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
 
     $oldErrorActionPreference = $ErrorActionPreference
     $oldVerbosePreference = $VerbosePreference    
@@ -1813,13 +2284,19 @@ function Invoke-RemoteDesktopServer
             Specify your own X509 Certificate or run the server in a elevated prompt."
         }
 
-        if ($CertificateFile)
-        {
-            # TODO: Test if certificate is well-formed.
+        $Certificate = $null
 
-            if (-not (Test-Path -Path $CertificateFile))
-            {            
-                throw "Certificate file not found at location: ""${CertificateFile}""."
+        if (($CertificateFile -and (Test-Path -Path $CertificateFile)) -or $EncodedCertificate)
+        {
+            $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+
+            if ($CertificateFile)
+            {
+                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile
+            }
+            else
+            {
+                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 @(, [Convert]::FromBase64String($EncodedCertificate))
             }
         }
 
@@ -1841,159 +2318,37 @@ function Invoke-RemoteDesktopServer
                 * At least of lower case character`r`n`
                 * At least of upper case character`r`n"
             }
-        }    
+        }            
 
-        $Certificate = $null
-
-        if ($CertificateFile -or $EncodedCertificate)
+        try
         {
-            $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
-            if ($CertificateFile)
-            {
-                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile
-            }
-            else
-            {
-                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 @(, [Convert]::FromBase64String($EncodedCertificate))
-            }
-        }
-
-        # Create new server and listen
-        $server = [ServerIO]::New(
-            $ListenAddress,
-            $ListenPort,
-            $Password,
-            $Certificate,
-            $TLSv1_3,
-            $ViewOnly  
-        )        
-
-        $server.Listen()        
-
-        while ($true)
-        {            
-            try
-            {                              
-                $global:HostSyncHash.RunningSession = $false
-
-                Write-Verbose "Server waiting for new incomming session..."
-
-                # Establish a new Remote Desktop Session.                                    
-                $clientDesktop = $server.PullClient(0); 
-                
-                # Attach to existing session a new handler.
-                # An established session is expected to open a new client in the next 10 seconds.
-                # Otherwise a Timeout Exception will be raised.
-                # Actually, if someone else decide to connect in the mean time it will interrupt the whole session,
-                # Remote Viewer will then need to establish a new session from scratch.
-                $clientEvents = $server.PullClient(10 * 1000);      
-                
-                $global:HostSyncHash.RunningSession = $true
-
-                # Grab desired screen to capture
-                $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { $_.DeviceName -eq $server.Session.Screen }
-
-                # Create Runspace #1 for Desktop Streaming.
-                $param = New-Object -TypeName PSCustomObject -Property @{                      
-                    Client = $clientDesktop                
-                    Screen = $screen
-                    ImageQuality = $ImageQuality
-                }
-                
-                $newRunspace = (New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param)                
-                $runspaces.Add($newRunspace)
+            $sessionManager = [SessionManager]::New(
+                $Password,
+                $Certificate,
+                $ViewOnly,
+                $TLSv1_3,
+                $Clipboard
+            )
             
-                # Notice: In current PowerRemoteDesktop Protocol design, Client wont Read or Write simultaneously from different
-                # threads. Sockets allow to Read and Write at the same time but not Read or Write at the same 
-                # time.
-
-                # If protocol change and require simultaneously Read or Write from different threads
-                # I will need to implement a synchronization mechanism to avoid conflicts like Synchronized Hashtables.
-
-                # Create Runspace #2 for Incoming Events.
-                $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
-                    Reader = $clientEvents.Reader   
-                    Clipboard = $Clipboard 
-                    ViewOnly = $ViewOnly          
-                }
-
-                $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)                  
-                $runspaces.Add($newRunspace)  
-
-                # Create Runspace #3 for Outgoing Events
-                $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
-                    Writer = $clientEvents.Writer
-                    Clipboard = $Clipboard
-                }
-
-                $newRunspace = (New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param)                  
-                $runspaces.Add($newRunspace)  
-
-                # Waiting for Runspaces to finish their jobs.
-                while ($true)
-                {                
-                    $completed = $true                   
-                    
-                    # Probe each existing runspaces
-                    foreach ($runspace in $runspaces)
-                    {
-                        if (-not $runspace.AsyncResult.IsCompleted)
-                        {
-                            $completed = $false                     
-                        } 
-                        elseif ($global:HostSyncHash.RunningSession)
-                        {                        
-                            # Notifying other runspaces that a session integrity was lost
-                            $global:HostSyncHash.RunningSession = $false
-                        }
-                    }
-
-                    if ($completed)
-                    { break }
-
-                    Start-Sleep -Seconds 2
-                }                                           
-            } 
-            catch {                
-                Write-Output "Viewer Session Exception Raised:"
-                Write-Host $_ -ForegroundColor Red
-                Write-Output "---"
-            }
-            finally
-            {
-                Write-Verbose "Terminate session and close active connections..."
-                
-                $server.CloseSession()
-
-                if ($clientEvents) 
-                {
-                    $clientEvents.Close()
-                }
-
-                if ($clientDesktop)
-                {
-                    $clientDesktop.Close()
-                }
-
-                Write-Verbose "Free runspaces..."
-
-                foreach ($runspace in $runspaces)
-                {
-                    $null = $runspace.PowerShell.EndInvoke($runspace.AsyncResult)
-                    $runspace.PowerShell.Runspace.Dispose()                                      
-                    $runspace.PowerShell.Dispose()                    
-                }    
-                $runspaces.Clear()            
-            }
+            $sessionManager.OpenServer(
+                $ListenAddress,
+                $ListenPort
+            )
+        
+            $sessionManager.ListenForWorkers()            
         }
+        finally
+        {
+            if ($sessionManager)
+            {            
+                $sessionManager.CloseServer()
+
+                $sessionManager = $null
+            }  
+        }                                                  
     }
     finally
-    {    
-        if ($server)
-        {
-            $server.Close()
-        }     
-
+    {            
         $ErrorActionPreference = $oldErrorActionPreference
         $VerbosePreference = $oldVerbosePreference
     }
