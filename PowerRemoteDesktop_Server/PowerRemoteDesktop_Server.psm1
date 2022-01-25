@@ -705,8 +705,26 @@ $global:DesktopStreamScriptBlock = {
 
         $packetSize = 9216 # 9KiB   
             
+        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
         while ($true)
-        {               
+        {       
+            # Using a stopwatch instead of replacing main loop "while ($true)" by "while($this.SafeHash.SessionActive)"
+            # sounds strange but this is done to avoid locking our SafeHash to regularly and loosing some
+            # performance. If you think this is useless, just use while($this.SafeHash.SessionActive) in main
+            # loop instead of while($true).
+            if ($stopWatch.ElapsedMilliseconds -ge 2000)
+            {
+                if (-not $Param.SafeHash.SessionActive)
+                {
+                    $stopWatch.Stop()                   
+
+                    break
+                }
+
+                $stopWatch.Restart()
+            }
+            
             try
             {                                                           
                 $desktopImage = Get-DesktopImage -Screen $screen                    
@@ -870,7 +888,7 @@ $global:IngressEventScriptBlock = {
     
     $keyboardSim = [KeyboardSim]::New()
 
-    while ($true)                    
+    while ($Param.SafeHash.SessionActive)                    
     {             
         try 
         {            
@@ -881,8 +899,8 @@ $global:IngressEventScriptBlock = {
             # ($_ | Out-File "c:\temp\debug.txt")
             
             break 
-        }        
-
+        }     
+        
         try
         {
             $aEvent = $jsonEvent | ConvertFrom-Json
@@ -1173,7 +1191,7 @@ $global:EgressEventScriptBlock = {
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    while ($true)
+    while ($Param.SafeHash.SessionActive)
     {
         # Events that occurs every seconds needs to be placed bellow.
         # If no event has occured during this second we send a Keep-Alive signal to
@@ -1696,6 +1714,7 @@ class ServerSession {
         
     $SafeHash = [HashTable]::Synchronized(@{
         ViewerConfiguration = [ViewerConfiguration]::New()
+        SessionActive = $true
     })
 
     ServerSession(
@@ -1755,6 +1774,7 @@ class ServerSession {
         $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
             Writer = $Client.Writer
             Clipboard = $this.Clipboard
+            SafeHash = $this.SafeHash
         }
 
         $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param))    
@@ -1764,7 +1784,8 @@ class ServerSession {
         $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
             Reader = $Client.Reader   
             Clipboard = $this.Clipboard
-            ViewOnly = $this.ViewOnly          
+            ViewOnly = $this.ViewOnly   
+            SafeHash = $this.SafeHash       
         }
                         
         $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)) 
@@ -1774,12 +1795,42 @@ class ServerSession {
         $this.Clients.Add($Client)
     }
 
+    [void] CheckSessionIntegrity()
+    {
+        <#
+            .SYNOPSIS
+                Check if session integrity is still respected.
+
+            .DESCRIPTION
+                We consider that a dead session, is a session with at least one worker that has completed his 
+                tasks.
+
+                This will notify other workers that something happened (disconnection, fatal exception).
+        #>
+
+        foreach ($worker in $this.WorkerThreads)
+        {
+            if ($worker.AsyncResult.IsCompleted)
+            {
+                $this.Close()
+                
+                break
+            }                 
+        }  
+    }
+
     [void] Close()
     {
         <#
             .SYNOPSIS
                 Close components associated with current session (Ex: runspaces, sockets etc..)
         #>
+
+        Write-Verbose "Closing session..."
+
+        $this.SafeHash.SessionActive = $false
+
+        Write-Verbose "Close associated peers..."
 
         # Close connection with remote peers associated with this session        
         foreach ($client in $this.Clients)
@@ -1789,7 +1840,29 @@ class ServerSession {
 
         $this.Clients.Clear()
 
-        # TODO: wait for workers to finish their jobs
+        Write-Verbose "Wait for associated threads to finish their tasks..."
+
+        while ($true)
+        {                
+            $completed = $true                   
+            
+            foreach ($worker in $this.WorkerThreads)
+            {
+                if (-not $worker.AsyncResult.IsCompleted)
+                {
+                    $completed = $false
+                    
+                    break
+                }                 
+            }
+
+            if ($completed)
+            { break }
+
+            Start-Sleep -Seconds 1
+        }
+
+        Write-Verbose "Dispose threads (runspaces)..."
 
         # Terminate runspaces associated with this session
         foreach ($worker in $this.WorkerThreads)
@@ -1799,6 +1872,8 @@ class ServerSession {
             $worker.PowerShell.Dispose()                    
         }    
         $this.WorkerThreads.Clear() 
+
+        Write-Verbose "Session closed."
     }
 }
 
@@ -2093,6 +2168,15 @@ class SessionManager {
                 throw "A server must be active to listen for new workers."
             }
 
+            try
+            {
+                # It is important to check regularly for dead sessions to let the garbage collector do his job
+                # and avoid dead threads (most of the time desktop streaming threads).
+                $this.CheckSessionsIntegrity()
+            }
+            catch
+            {  }
+
             $client = $null
             try 
             {
@@ -2140,6 +2224,14 @@ class SessionManager {
             }
             finally
             { }
+        }
+    }
+
+    [void] CheckSessionsIntegrity()
+    {
+        foreach ($session in $this.Sessions)
+        {
+            $session.CheckSessionIntegrity()
         }
     }
 
