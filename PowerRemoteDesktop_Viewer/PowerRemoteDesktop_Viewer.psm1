@@ -853,23 +853,15 @@ class ViewerSession
             $localScreenWidth = Get-LocalScreenWidth
             $localScreenHeight = (Get-LocalScreenHeight) - (Get-WindowCaptionHeight)
 
-            $this.ViewerConfiguration = [ViewerConfiguration]::New()
-            
-            $forceResize = ($this.ResizeRatio -ge 30 -and $this.ResizeRatio -le 90)
+            $this.ViewerConfiguration = [ViewerConfiguration]::New()                 
 
-            $this.ViewerConfiguration.RequireResize = (
-                $localScreenWidth -le $selectedScreen.Width -or
-                $localScreenHeight -le $selectedScreen.Height -or
-                $forceResize
-            )
+            # TODO: Review the whole thing, something odd happends if target screen is bigger and if we force a resize ratio
+            if ($localScreenWidth -le $selectedScreen.Width -or $localScreenHeight -le $selectedScreen.Height)
+            {          
+                $this.ViewerConfiguration.RequireResize = $true
 
-            if ($this.ViewerConfiguration.RequireResize -and -not $forceResize)
-            {
-                $this.ResizeRatio = 90 # Minimum default value
-            }            
+                $this.ResizeRatio = 90
 
-            if ($this.ViewerConfiguration.RequireResize)
-            {                                       
                 $adjustVertically = $localScreenWidth -gt $localScreenHeight
 
                 if ($adjustVertically)
@@ -890,9 +882,19 @@ class ViewerSession
                 }                        
             }
             else
-            {            
-                $this.ViewerConfiguration.VirtualDesktopWidth = $selectedScreen.Width
-                $this.ViewerConfiguration.VirtualDesktopHeight = $selectedScreen.Height
+            {      
+                $this.ViewerConfiguration.RequireResize = ($this.ResizeRatio -ge 30 -and $this.ResizeRatio -le 90)
+
+                if ($this.ViewerConfiguration.RequireResize)
+                {
+                    $this.ViewerConfiguration.VirtualDesktopWidth = ($selectedScreen.Width * $this.ResizeRatio) / 100 
+                    $this.ViewerConfiguration.VirtualDesktopHeight = ($selectedScreen.Height * $this.ResizeRatio) / 100
+                }
+                else
+                {
+                    $this.ViewerConfiguration.VirtualDesktopWidth = $selectedScreen.Width
+                    $this.ViewerConfiguration.VirtualDesktopHeight = $selectedScreen.Height
+                }                
             }    
             
             $this.ViewerConfiguration.ScreenX_Delta = $selectedScreen.X
@@ -1725,12 +1727,12 @@ function Invoke-RemoteDesktopViewer
 
                         [string] $Button = ""
                     )
-
+                    
                     if ($session.ViewerConfiguration.RequireResize)
                     {
                         $X = ($X * 100) / $session.ResizeRatio
                         $Y = ($Y * 100) / $session.ResizeRatio
-                    }
+                    }                    
       
                     $X += $session.ViewerConfiguration.ScreenX_Delta
                     $Y += $session.ViewerConfiguration.ScreenY_Delta
