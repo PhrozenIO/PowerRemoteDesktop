@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assets/iconv2.png"/>
+  <img src="Assets/iconv2.png" width="256"/>
 </p>
 
 # PowerRemoteDesktop
