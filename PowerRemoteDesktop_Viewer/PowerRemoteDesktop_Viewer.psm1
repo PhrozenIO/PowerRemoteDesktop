@@ -685,7 +685,9 @@ class ViewerConfiguration
 {
     [int] $VirtualDesktopWidth = 0
     [int] $VirtualDesktopHeight = 0
-    [bool] $RequireResize = $false
+    [int] $ScreenX_Delta = 0
+    [int] $ScreenY_Delta = 0
+    [bool] $RequireResize = $false    
 }
 
 class ViewerSession
@@ -710,9 +712,7 @@ class ViewerSession
         [bool] $TLSv1_3,
         [int] $ImageCompressionQuality
     )    
-    {    
-        # TODO: Check if ServerAddress is a valid host.
-        
+    {                    
         # Or: System.Management.Automation.Runspaces.MaxPort (High(Word))
         if ($ServerPort -lt 0 -and $ServerPort -gt 65535)
         {
@@ -895,6 +895,9 @@ class ViewerSession
                 $this.ViewerConfiguration.VirtualDesktopHeight = $selectedScreen.Height
             }    
             
+            $this.ViewerConfiguration.ScreenX_Delta = $selectedScreen.X
+            $this.ViewerConfiguration.ScreenY_Delta = $selectedScreen.Y
+
             $viewerExpectation = New-Object PSCustomObject -Property @{    
                 ScreenName = $selectedScreen.Name 
                 ImageCompressionQuality = $this.ImageCompressionQuality            
@@ -1729,8 +1732,8 @@ function Invoke-RemoteDesktopViewer
                         $Y = ($Y * 100) / $session.ResizeRatio
                     }
       
-                    $X += $session.ServerInformation.Screen.X
-                    $Y += $session.ServerInformation.Screen.Y
+                    $X += $session.ViewerConfiguration.ScreenX_Delta
+                    $Y += $session.ViewerConfiguration.ScreenY_Delta
 
                     $aEvent = (New-MouseEvent -X $X -Y $Y -Button $Button -Type $Type)                    
 
