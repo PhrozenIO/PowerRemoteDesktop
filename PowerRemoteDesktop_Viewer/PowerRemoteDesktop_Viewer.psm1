@@ -1500,7 +1500,10 @@ function Invoke-RemoteDesktopViewer
             If present, apply a resize ratio parameter to remote desktop.
 
         .PARAMETER ResizeRatio
-           Define the resize ratio of remote desktop (from 30 to 99).
+            Define the resize ratio of remote desktop (from 30 to 99).
+
+        .PARAMETER AlwaysOnTop
+            If switch is set, virtual desktop form will be above all other windows (Always on Top)
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
@@ -1528,7 +1531,9 @@ function Invoke-RemoteDesktopViewer
         [switch] $Resize,
 
         [ValidateRange(30, 99)]
-        [int] $ResizeRatio = 90
+        [int] $ResizeRatio = 90,
+
+        [switch] $AlwaysOnTop
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1811,6 +1816,8 @@ function Invoke-RemoteDesktopViewer
                             ((Get-LocalScreenWidth) - $virtualDesktopSyncHash.VirtualDesktop.Form.Width) / 2,
                             ((Get-LocalScreenHeight) - $virtualDesktopSyncHash.VirtualDesktop.Form.Height) / 2
                         ) 
+
+                        $virtualDesktopSyncHash.VirtualDesktop.Form.TopMost = $AlwaysOnTop
                     }
                 )
 
