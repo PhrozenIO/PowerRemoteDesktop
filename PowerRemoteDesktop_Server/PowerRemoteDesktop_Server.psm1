@@ -1338,7 +1338,7 @@ class ClientIO {
     ClientIO(
         [System.Net.Sockets.TcpClient] $Client,
         [System.Security.Cryptography.X509Certificates.X509Certificate2] $Certificate,
-        [bool] $TLSv1_3
+        [bool] $UseTLSv1_3
     ) {
         if ((-not $Client) -or (-not $Certificate))
         {
@@ -1351,7 +1351,7 @@ class ClientIO {
 
         $this.SSLStream = New-Object System.Net.Security.SslStream($this.Client.GetStream(), $false)                
 
-        if ($TLSv1_3)
+        if ($UseTLSv1_3)
         {
             $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
         }
@@ -2328,7 +2328,7 @@ function Invoke-RemoteDesktopServer
         .PARAMETER EncodedCertificate
             A valid X509 Certificate (With Private Key) encoded as a Base64 String.
 
-        .PARAMETER TLSv1_3
+        .PARAMETER UseTLSv1_3
             Define whether or not TLS v1.3 must be used for communication with Viewer.
 
         .PARAMETER DisableVerbosity
@@ -2358,7 +2358,7 @@ function Invoke-RemoteDesktopServer
         # Or
         [string] $EncodedCertificate = "", # 2
 
-        [switch] $TLSv1_3,        
+        [switch] $UseTLSv1_3,        
         [switch] $DisableVerbosity,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
         [switch] $ViewOnly
@@ -2433,7 +2433,7 @@ function Invoke-RemoteDesktopServer
                 $Password,
                 $Certificate,
                 $ViewOnly,
-                $TLSv1_3,
+                $UseTLSv1_3,
                 $Clipboard
             )
             

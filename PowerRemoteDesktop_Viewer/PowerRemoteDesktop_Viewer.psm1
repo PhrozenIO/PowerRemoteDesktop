@@ -370,7 +370,7 @@ function Resolve-AuthenticationChallenge
 class ClientIO {
     [string] $RemoteAddress
     [int] $RemotePort
-    [bool] $TLSv1_3
+    [bool] $UseTLSv1_3
 
     [System.Net.Sockets.TcpClient] $Client = $null
     [System.Net.Security.SslStream] $SSLStream = $null
@@ -389,16 +389,16 @@ class ClientIO {
             .PARAMETER RemotePort
                 Remote server port.
 
-            .PARAMETER TLSv1_3
+            .PARAMETER UseTLSv1_3
                 Define whether or not SSL/TLS v1.3 must be used.
         #>
         [string] $RemoteAddress = "127.0.0.1",
         [int] $RemotePort = 2801,
-        [bool] $TLSv1_3 = $false
+        [bool] $UseTLSv1_3 = $false
     ) {
         $this.RemoteAddress = $RemoteAddress
         $this.RemotePort = $RemotePort
-        $this.TLSv1_3 = $TLSv1_3
+        $this.UseTLSv1_3 = $UseTLSv1_3
     }
 
     [void]Connect() {
@@ -413,7 +413,7 @@ class ClientIO {
 
         Write-Verbose "Connected."
 
-        if ($this.TLSv1_3)
+        if ($this.UseTLSv1_3)
         {
             $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
         }
@@ -715,7 +715,7 @@ class ViewerSession
     [string] $ServerAddress = "127.0.0.1"
     [string] $ServerPort = 2801
     [SecureString] $SecurePassword = $null
-    [bool] $TLSv1_3 = $false       
+    [bool] $UseTLSv1_3 = $false       
     [int] $ImageCompressionQuality = 100 
     [int] $ResizeRatio = 0
 
@@ -726,7 +726,7 @@ class ViewerSession
         [string] $ServerAddress,
         [int] $ServerPort,
         [SecureString] $SecurePassword,
-        [bool] $TLSv1_3,
+        [bool] $UseTLSv1_3,
         [int] $ImageCompressionQuality
     )    
     {                    
@@ -739,7 +739,7 @@ class ViewerSession
         $this.ServerAddress = $ServerAddress
         $this.ServerPort = $ServerPort 
         $this.SecurePassword = $SecurePassword
-        $this.TLSv1_3 = $TLSv1_3           
+        $this.UseTLSv1_3 = $UseTLSv1_3           
         $this.ImageCompressionQuality = $ImageCompressionQuality
     }
 
@@ -758,7 +758,7 @@ class ViewerSession
 
         Write-Verbose "Establish first contact with remote server..."
         
-        $client = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.TLSv1_3)
+        $client = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.UseTLSv1_3)
         try
         {
             $client.Connect()        
@@ -962,7 +962,7 @@ class ViewerSession
 
         $this.CheckSession()
 
-        $client = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.TLSv1_3)
+        $client = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.UseTLSv1_3)
         try
         {            
             $client.Connect()
@@ -1492,7 +1492,7 @@ function Invoke-RemoteDesktopViewer
         .PARAMETER Password
             Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead)        
 
-        .PARAMETER TLSv1_3
+        .PARAMETER UseTLSv1_3
             Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
             Recommended if possible.
 
@@ -1532,7 +1532,7 @@ function Invoke-RemoteDesktopViewer
         [ValidateRange(0, 65535)]
         [int] $ServerPort = 2801,        
 
-        [switch] $TLSv1_3,
+        [switch] $UseTLSv1_3,
                            
         [SecureString] $SecurePassword,
         [String] $Password,                
@@ -1592,7 +1592,7 @@ function Invoke-RemoteDesktopViewer
             $ServerAddress,
             $ServerPort,
             $SecurePassword,
-            $TLSv1_3,
+            $UseTLSv1_3,
             $ImageCompressionQuality
         )
         try
