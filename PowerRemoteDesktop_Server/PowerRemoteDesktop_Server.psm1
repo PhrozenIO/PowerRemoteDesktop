@@ -66,6 +66,21 @@ enum ClipboardMode {
     Both = 4
 }
 
+enum ProtocolCommand {
+    Success = 1
+    Fail = 2
+    RequestSession = 3
+    AttachToSession = 4
+    BadRequest = 5
+    ResourceFound = 6
+    ResourceNotFound = 7
+}
+
+enum WorkerKind {
+    Desktop = 1
+    Events = 2
+}
+
 function Write-Banner 
 {
     <#
@@ -1411,13 +1426,13 @@ class ClientIO {
             # Challenge solution is a Sha512 Hash so comparison doesn't need to be sensitive (-ceq or -cne)
             if ($challengeReply -ne $challengeSolution)
             {            
-                $this.Writer.WriteLine("KO.")
+                $this.Writer.WriteLine(([ProtocolCommand]::Fail))
 
                 throw "Client challenge solution does not match our solution."
             }
             else
             {            
-                $this.Writer.WriteLine("OK.")
+                $this.Writer.WriteLine(([ProtocolCommand]::Success))
 
                 Write-Verbose "Password Authentication Success"
 
@@ -2098,7 +2113,7 @@ class SessionManager {
 
             $this.Sessions.Add($session)    
             
-            $client.WriteLine("OK")
+            $client.WriteLine((([ProtocolCommand]::Success)))
         }
         catch
         {
@@ -2130,27 +2145,27 @@ class SessionManager {
         $session = $this.GetSession($Client.ReadLine(5 * 1000))
         if (-not $session)
         {
-            $Client.WriteLine("SESS_NOTFOUND")
+            $Client.WriteLine(([ProtocolCommand]::ResourceNotFound))
 
             throw "Session object matchin given id could not be find in active session pool."
         }
 
         Write-Verbose "Client successfully attached to session: ""$($session.id)"""
 
-        $Client.WriteLine("SESS_OK")
+        $Client.WriteLine(([ProtocolCommand]::ResourceFound))
 
         $workerKind = $Client.ReadLine(5 * 1000)
 
-        switch ($workerKind)
+        switch ([WorkerKind] $workerKind)
         {
-            "WRKER_DESKTOP"
+            (([WorkerKind]::Desktop))
             {
                 $session.NewDesktopWorker($Client)
 
                 break
             }
 
-            "WRKER_EVENT"
+            (([WorkerKind]::Events))
             {                            
                 $session.NewEventWorker($Client) # I/O
 
@@ -2189,16 +2204,16 @@ class SessionManager {
 
                 $requestMode = $client.ReadLine(5 * 1000)
 
-                switch ($requestMode)
+                switch ([ProtocolCommand] $requestMode)
                 {
-                    "REQ_SESSION"
+                    ([ProtocolCommand]::RequestSession)
                     {
                         $this.ProceedNewSessionRequest($client)
 
                         break
                     }
 
-                    "REQ_ATTACH"
+                    ([ProtocolCommand]::AttachToSession)
                     {
                         $this.ProceedAttachRequest($client)
 
@@ -2207,7 +2222,7 @@ class SessionManager {
 
                     default:
                     {
-                        $client.WriteLine("BAD_REQ")
+                        $client.WriteLine(([ProtocolCommand]::BadRequest))
 
                         throw "Bad request."
                     }

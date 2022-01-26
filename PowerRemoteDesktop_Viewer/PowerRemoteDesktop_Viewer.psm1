@@ -72,6 +72,21 @@ enum ClipboardMode {
     Both = 4
 }
 
+enum ProtocolCommand {
+    Success = 1
+    Fail = 2
+    RequestSession = 3
+    AttachToSession = 4
+    BadRequest = 5
+    ResourceFound = 6
+    ResourceNotFound = 7
+}
+
+enum WorkerKind {
+    Desktop = 1
+    Events = 2
+}
+
 function Write-Banner 
 {
     <#
@@ -551,7 +566,7 @@ class ClientIO {
         $this.Writer.WriteLine($challengeSolution)
 
         $result = $this.Reader.ReadLine()
-        if ($result -eq "OK.")
+        if ($result -eq [ProtocolCommand]::Success)
         {
             Write-Verbose "Solution accepted. Authentication success."                
         }            
@@ -752,7 +767,7 @@ class ViewerSession
 
             Write-Verbose "Request session..."
 
-            $client.WriteLine("REQ_SESSION")
+            $client.WriteLine(([ProtocolCommand]::RequestSession))
 
             $this.ServerInformation = $client.ReadJson()
 
@@ -921,7 +936,7 @@ class ViewerSession
 
             $client.WriteJson($viewerExpectation)
 
-            if ($client.ReadLine(5 * 1000) -cne "OK")
+            if ($client.ReadLine(5 * 1000) -cne [ProtocolCommand]::Success)
             {
                 throw "Remote server did not respond to our expectation in time."
             }
@@ -941,7 +956,7 @@ class ViewerSession
         }    
     }
 
-    [ClientIO] ConnectWorker([string] $WorkerKind)
+    [ClientIO] ConnectWorker([WorkerKind] $WorkerKind)
     {
         Write-Verbose "Connect new worker: ""$WorkerKind""..."
 
@@ -954,15 +969,15 @@ class ViewerSession
 
             $client.Authentify($this.SecurePassword)
 
-            $client.WriteLine("REQ_ATTACH")
+            $client.WriteLine(([ProtocolCommand]::AttachToSession))
 
             Write-Verbose "Attach worker to remote session ""$($this.ServerInformation.SessionId)"""
 
             $client.WriteLine($this.ServerInformation.SessionId)
 
-            switch ($client.ReadLine(5 * 1000))
+            switch ([ProtocolCommand] $client.ReadLine(5 * 1000))
             {
-                "SESS_OK"
+                ([ProtocolCommand]::ResourceFound)
                 {
                     Write-Verbose "Worker successfully attached to session, define which kind of worker we are..."
 
@@ -973,14 +988,14 @@ class ViewerSession
                     break
                 }
 
-                "SESS_NOTFOUND"
+                ([ProtocolCommand]::ResourceNotFound)
                 {
                     throw "Server could not locate session."
                 }                
 
                 default
                 {
-                    throw "Unexpected answer from remote server for ""REQ_ATTACH""."
+                    throw "Unexpected answer from remote server for session attach."
                 }
             }
 
@@ -1001,14 +1016,14 @@ class ViewerSession
     {
         Write-Verbose "Create new desktop streaming worker..."
 
-        $this.ClientDesktop = $this.ConnectWorker("WRKER_DESKTOP")
+        $this.ClientDesktop = $this.ConnectWorker([WorkerKind]::Desktop)
     }
 
     [void] ConnectEventsWorker()
     {
         Write-Verbose "Create new event event (in/out) worker..."
 
-        $this.ClientEvents = $this.ConnectWorker("WRKER_EVENT")
+        $this.ClientEvents = $this.ConnectWorker([WorkerKind]::Events)
     }    
 
     [bool] HasSession()
