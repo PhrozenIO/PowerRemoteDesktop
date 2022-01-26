@@ -160,7 +160,8 @@ Supported options:
 
 * **ServerAddress** (Default: `127.0.0.1`): Remote server host/address.
 * **ServerPort** (Default: `2801`): Remote server port.
-* **Password** (Mandatory): Password used for server authentication.
+* **SecurePassword**: SecureString Password object used to authenticate with remote server (Recommended)
+* **Password**: Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead) 
 * **DisableVerbosity** (Default: None): If this switch is present, verbosity will be hidden from console.
 * **TLSv1_3** (Default: None): If this switch is present, viewer will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
 * **Clipboard** (Default: `Both`): Define clipboard synchronization rules:
@@ -175,7 +176,7 @@ Supported options:
 
 #### Example
 
-`Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort 2801 -Password "Jade"`
+`Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)`
 
 ### Server
 
@@ -190,7 +191,8 @@ Supported options:
     * **127.0.0.1**: Localhost interface
     * **x.x.x.x**: Specific interface (Replace `x` with a valid network address)
 * **ListenPort** (Default: `2801`): Define in which port to listen for new viewer.
-* **Password** (**Mandatory**): Define password used during authentication process.
+* **SecurePassword**: SecureString Password object used by remote viewer to authenticate with server (Recommended)
+* **Password**: Plain-Text Password used by remote viewer to authenticate with server (Not recommended, use SecurePassword instead)
 * **CertificateFile** (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
 * **EncodedCertificate** (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
 * **TLSv1_3** (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
@@ -206,9 +208,9 @@ If no certificate option is set, then a default X509 Certificate is generated an
 
 ##### Example
 
-`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -Password "Jade"`
+`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)`
 
-`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -Password "Jade" -CertificateFile "c:\certs\phrozen.p12"`
+`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force) -CertificateFile "c:\certs\phrozen.p12"`
 
 #### Generate and pass your own X509 Certificate
 
@@ -321,6 +323,7 @@ Detail                           Fingerprint
 * Center virtual desktop glitch fixed.
 * Handshake calls (auth + session / worker negociation) will now timeout to avoid possible dead locks.
 * Virtual Desktop Form can now be set always on top of other forms.
+* Server finally use secure string to handle password-authentication.
 
 ### List of ideas and TODO
 
