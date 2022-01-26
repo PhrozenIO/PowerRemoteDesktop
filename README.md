@@ -477,6 +477,7 @@ Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre
 cannot be held liable for the availability of, or the content located on or through it.
 Plus, any losses or damages occurred from using these contents or the internet
 generally.
+
 ---
 
 Made with ❤️ in 🇫🇷
