@@ -449,6 +449,8 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * Virtual Desktop Form can now be set always on top of other forms.
 * Server finally use secure string to handle password-authentication.
 
+https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8b5e-a96f44499013.mp4
+
 ### List of ideas and TODO
 
 * 🟢 Support Password Protected external Certificates.
