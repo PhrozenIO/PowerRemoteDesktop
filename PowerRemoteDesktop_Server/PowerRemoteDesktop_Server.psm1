@@ -1750,6 +1750,7 @@ class ServerSession {
     [string] $Id = ""   
     [bool] $ViewOnly = $false
     [ClipboardMode] $Clipboard = [ClipboardMode]::Both
+    [string] $ViewerLocation = ""
     
     [System.Collections.Generic.List[PSCustomObject]]
     $WorkerThreads = @()
@@ -1764,13 +1765,15 @@ class ServerSession {
 
     ServerSession(
         [bool] $ViewOnly,
-        [ClipboardMode] $Clipboard
+        [ClipboardMode] $Clipboard,
+        [string] $ViewerLocation
     ) 
     {
         $this.Id = (SHA512FromString -String (-join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})))    
         
         $this.ViewOnly = $ViewOnly
         $this.Clipboard = $Clipboard
+        $this.ViewerLocation = $ViewerLocation
     }
 
     [bool] CompareSession([string] $Id) 
@@ -1877,7 +1880,7 @@ class ServerSession {
 
         Write-Verbose "Close associated peers..."
 
-        # Close connection with remote peers associated with this session        
+        # Close connection with remote peers associated with this session    
         foreach ($client in $this.Clients)
         {
             $client.Close()
@@ -1917,6 +1920,8 @@ class ServerSession {
             $worker.PowerShell.Dispose()                    
         }    
         $this.WorkerThreads.Clear() 
+
+        Write-Host "Session terminated with viewer: $($this.ViewerLocation)" 
 
         Write-Verbose "Session closed."
     }
@@ -2072,7 +2077,7 @@ class SessionManager {
         {                           
             Write-Verbose "Remote peer as requested a new session..."
 
-            $session = [ServerSession]::New($this.ViewOnly, $this.Clipboard)
+            $session = [ServerSession]::New($this.ViewOnly, $this.Clipboard, $client.RemoteAddress())
 
             Write-Verbose "@ServerSession"
             Write-Verbose "Id: ""$($session.Id)"""            
@@ -2232,8 +2237,12 @@ class SessionManager {
                 switch ([ProtocolCommand] $requestMode)
                 {
                     ([ProtocolCommand]::RequestSession)
-                    {
+                    {                        
+                        $remoteAddress = $client.RemoteAddress()
+
                         $this.ProceedNewSessionRequest($client)
+
+                        Write-Host "New remote desktop session established with: $($remoteAddress)" 
 
                         break
                     }
@@ -2468,6 +2477,8 @@ function Invoke-RemoteDesktopServer
 
         try
         {
+            Write-Host "Loading remote desktop server components..."
+
             $sessionManager = [SessionManager]::New(
                 $SecurePassword,
                 $Certificate,
@@ -2480,6 +2491,8 @@ function Invoke-RemoteDesktopServer
                 $ListenAddress,
                 $ListenPort
             )
+
+            Write-Host "Server is ready to receive new connections..."
         
             $sessionManager.ListenForWorkers()            
         }
@@ -2491,6 +2504,8 @@ function Invoke-RemoteDesktopServer
 
                 $sessionManager = $null
             }  
+
+            Write-Host "Remote desktop was closed."
         }                                                  
     }
     finally

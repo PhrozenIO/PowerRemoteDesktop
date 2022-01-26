@@ -1566,9 +1566,7 @@ function Invoke-RemoteDesktopViewer
         else 
         {
             $VerbosePreference = "SilentlyContinue"
-        }
-
-        $VerbosePreference = "continue"
+        }       
 
         Write-Banner 
 
@@ -1602,11 +1600,15 @@ function Invoke-RemoteDesktopViewer
                 $session.ResizeRatio = $ResizeRatio
             }            
 
+            Write-Host "Start new remote desktop session..."
+
             $session.OpenSession()
 
             $session.ConnectDesktopWorker()
 
             $session.ConnectEventsWorker()
+
+            Write-Host "Session successfully established, start streaming..."
 
             Write-Verbose "Create WinForms Environment..."            
 
@@ -1956,7 +1958,7 @@ function Invoke-RemoteDesktopViewer
             $null = $virtualDesktopSyncHash.VirtualDesktop.Form.ShowDialog()
         }
         finally
-        {    
+        {                
             Write-Verbose "Free environement."
 
             if ($session)
@@ -1979,7 +1981,9 @@ function Invoke-RemoteDesktopViewer
             if ($virtualDesktopSyncHash.VirtualDesktop)
             {            
                 $virtualDesktopSyncHash.VirtualDesktop.Form.Dispose()
-            }                                    
+            }      
+            
+            Write-Host "Remote desktop session has ended."
         }           
     }
     finally
