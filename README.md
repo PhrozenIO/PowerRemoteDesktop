@@ -222,19 +222,19 @@ Create a new remote desktop session with a Power Remote Desktop Server.
 
 ##### ⚙️ Supported Options:
 
-| Parameter         | Type             | Default    | Description  |
-|-------------------|------------------|------------|--------------|
-| ServerAddress     | String           | 127.0.0.1  | Remote server host/address  |
-| ServerPort        | Integer          | 2801       | Remote server port |
-| SecurePassword    | SecureString     | None       | SecureString object containing password used to authenticate with remote server (Recommended) |
-| Password          | String           | None       | Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead) |
-| DisableVerbosity  | Switch           | False      | If present, program wont show verbosity messages |
-| UseTLSv1_3        | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
-| Clipboard         | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
-| ImageQuality      | Integer (0-100)  | 100        | JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality. |
-| Resize            | Switch           | False      | If present, remote desktop will get resized accordingly with `ResizeRatio` option. |
-| ResizeRatio       | Integer (30-99)  | 90         | Used with `Resize` option, define the resize ratio in percentage. |
-| AlwaysOnTop       | Switch           | False      | If present, virtual desktop form will be above all other window's |
+| Parameter               | Type             | Default    | Description  |
+|-------------------------|------------------|------------|--------------|
+| ServerAddress           | String           | 127.0.0.1  | Remote server host/address  |
+| ServerPort              | Integer          | 2801       | Remote server port |
+| SecurePassword          | SecureString     | None       | SecureString object containing password used to authenticate with remote server (Recommended) |
+| Password                | String           | None       | Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead) |
+| DisableVerbosity        | Switch           | False      | If present, program wont show verbosity messages |
+| UseTLSv1_3              | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
+| Clipboard               | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
+| ImageCompressionQuality | Integer (0-100)  | 100        | JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality. |
+| Resize                  | Switch           | False      | If present, remote desktop will get resized accordingly with `ResizeRatio` option. |
+| ResizeRatio             | Integer (30-99)  | 90         | Used with `Resize` option, define the resize ratio in percentage. |
+| AlwaysOnTop             | Switch           | False      | If present, virtual desktop form will be above all other window's |
 
 ##### Clipboard Mode Enum Properties
 
@@ -436,7 +436,7 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * TransportMode option removed.
 * Desktop streaming performance / speed increased.
 
-### XX January 2022 (2.0.0)
+### 28 January 2022 (2.0.0)
 
 * Protocol was completely revisited, protocol is now more stable and modular.
 * Session concurrency is now supported, multiple viewers can connect at the same time to a server.
