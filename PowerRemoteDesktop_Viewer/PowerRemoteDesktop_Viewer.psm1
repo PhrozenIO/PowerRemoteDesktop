@@ -1497,13 +1497,13 @@ function Invoke-RemoteDesktopViewer
                 100 = Highest quality.
 
         .PARAMETER Resize
-            If present, apply a resize ratio parameter to remote desktop.
+            If this switch is present, remote desktop resize will be forced according ResizeRatio option value.
 
         .PARAMETER ResizeRatio
-            Define the resize ratio of remote desktop (from 30 to 99).
+            Define the resize ratio to apply to remote desktop (30 to 99)
 
         .PARAMETER AlwaysOnTop
-            If switch is set, virtual desktop form will be above all other windows (Always on Top)
+            If this switch is present, virtual desktop form will be above all other windows.
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)

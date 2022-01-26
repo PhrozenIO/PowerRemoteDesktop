@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assets/iconv2.png" width="256"/>
+  <img src="Assets/iconv2.png" width="384"/>
 </p>
 
 # PowerRemoteDesktop
@@ -32,30 +32,7 @@ https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b
 * Mouse cursor icon state is synchronized between Viewer (Virtual Desktop) and Server.
 * Multi-Screen (Monitor) support. If remote computer have more than one desktop screen, you can choose which desktop screen to capture.
 * View Only mode for demonstration. You can disable remote control abilities and just show your screen to remote peer.
-
-## Development Roadmap
-
-### Version 1.x (Now marked as stable)
-
-Version `1.x` development is now over, only bug fix and improvements will be pushed to dedicated branch.
-
-### Version 2.x (In progress)
-
-Version `2.x` development is in progress with one new big feature and one huge improvement.
-
-#### Feature
-
-Motion detection for desktop capture. Instead of capturing the whole screen, only updated screen areas will be sent to viewer thus improving considerably the streaming speed and reducing CPU usage.
-
-#### Improvement
-
-A huge part of the protocol will be updated.
-
-The whole handshake progress will be cleaner and both Server and Viewer will respectively acknowledge their desired configuration.
-
-For example, instead of setting the image quality in server option (which makes no sense), it will be available from viewer option and sent to server.
-
-Same thing for image resizing, instead of resizing desktop image viewer-side, image will be resized server-side accordingly with viewer constraints.
+* Session concurrency. Multiple viewers can connect to a single server at the same time.
 
 ## Installation
 
@@ -181,16 +158,20 @@ Call `Invoke-RemoteDesktopViewer`
 
 Supported options:
 
-* `ServerAddress` (Default: `127.0.0.1`): Remote server host/address.
-* `ServerPort` (Default: `2801`): Remote server port.
-* `Password` (Mandatory): Password used for server authentication.
-* `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
-* `TLSv1_3` (Default: None): If this switch is present, viewer will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
-* `Clipboard` (Default: `Both`): Define clipboard synchronization rules:
-    * `Disabled`: Completely disable clipboard synchronization.
-    * `Receive`: Update local clipboard with remote clipboard only.
-    * `Send`: Send local clipboard to remote peer.
-    * `Both`: Clipboards are fully synchronized between Viewer and Server.
+* **ServerAddress** (Default: `127.0.0.1`): Remote server host/address.
+* **ServerPort** (Default: `2801`): Remote server port.
+* **Password** (Mandatory): Password used for server authentication.
+* **DisableVerbosity** (Default: None): If this switch is present, verbosity will be hidden from console.
+* **TLSv1_3** (Default: None): If this switch is present, viewer will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
+* **Clipboard** (Default: `Both`): Define clipboard synchronization rules:
+    * **Disabled**: Completely disable clipboard synchronization.
+    * **Receive**: Update local clipboard with remote clipboard only.
+    * **Send**: Send local clipboard to remote peer.
+    * **Both**: Clipboards are fully synchronized between Viewer and Server.
+* **ImageQuality** (Default: `100`): JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.
+* **Resize** (Default: None): If this switch is present, remote desktop resize will be forced according ResizeRatio option value.
+* **ResizeRatio** (Default: `90`): Define the resize ratio to apply to remote desktop (30 to 99)
+* **AlwaysOnTop** (Default: None): If this switch is present, virtual desktop form will be above all other windows.
 
 #### Example
 
@@ -204,23 +185,22 @@ Call `Invoke-RemoteDesktopServer`
 
 Supported options:
 
-* `ListenAddress` (Default: `0.0.0.0`): Define in which interface to listen for new viewer.
-    * `0.0.0.0` : All interfaces
-    * `127.0.0.1`: Localhost interface
-    * `x.x.x.x`: Specific interface (Replace `x` with a valid network address)
-* `ListenPort` (Default: `2801`): Define in which port to listen for new viewer.
-* `Password` (**Mandatory**): Define password used during authentication process.
-* `CertificateFile` (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
-* `EncodedCertificate` (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
-* `TLSv1_3` (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
-* `DisableVerbosity` (Default: None): If this switch is present, verbosity will be hidden from console.
-* `ImageQuality` (Default: `100`): JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.      
-* `Clipboard` (Default: `Both`): Define clipboard synchronization rules:
-    * `Disabled`: Completely disable clipboard synchronization.
-    * `Receive`: Update local clipboard with remote clipboard only.
-    * `Send`: Send local clipboard to remote peer.
-    * `Both`: Clipboards are fully synchronized between Viewer and Server.
-* `ViewOnly` (Default: None): If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. Useful for view session only.
+* **ListenAddress** (Default: `0.0.0.0`): Define in which interface to listen for new viewer.
+    * **0.0.0.0** : All interfaces
+    * **127.0.0.1**: Localhost interface
+    * **x.x.x.x**: Specific interface (Replace `x` with a valid network address)
+* **ListenPort** (Default: `2801`): Define in which port to listen for new viewer.
+* **Password** (**Mandatory**): Define password used during authentication process.
+* **CertificateFile** (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
+* **EncodedCertificate** (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
+* **TLSv1_3** (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
+* **DisableVerbosity** (Default: None): If this switch is present, verbosity will be hidden from console.
+* **Clipboard** (Default: `Both`): Define clipboard synchronization rules:
+    * **Disabled**: Completely disable clipboard synchronization.
+    * **Receive**: Update local clipboard with remote clipboard only.
+    * **Send**: Send local clipboard to remote peer.
+    * **Both**: Clipboards are fully synchronized between Viewer and Server.
+* **ViewOnly** (Default: None): If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. Useful for view session only.
 
 If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
 
@@ -340,6 +320,7 @@ Detail                           Fingerprint
 * Desktop resize can now be forced and requested by viewer.
 * Center virtual desktop glitch fixed.
 * Handshake calls (auth + session / worker negociation) will now timeout to avoid possible dead locks.
+* Virtual Desktop Form can now be set always on top of other forms.
 
 ### List of ideas and TODO
 
