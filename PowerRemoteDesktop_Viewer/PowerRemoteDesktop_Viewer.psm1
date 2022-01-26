@@ -683,11 +683,13 @@ class ClientIO {
 
 class ViewerConfiguration
 {
+    [bool] $RequireResize = $false    
     [int] $VirtualDesktopWidth = 0
     [int] $VirtualDesktopHeight = 0
     [int] $ScreenX_Delta = 0
     [int] $ScreenY_Delta = 0
-    [bool] $RequireResize = $false    
+    [float] $ScreenX_Ratio = 1
+    [float] $ScreenY_Ratio = 1    
 }
 
 class ViewerSession
@@ -855,18 +857,17 @@ class ViewerSession
 
             $this.ViewerConfiguration = [ViewerConfiguration]::New()                 
 
-            # TODO: Review the whole thing, something odd happends if target screen is bigger and if we force a resize ratio
+            # If remote screen is bigger than local screen, we will resize remote screen to fit 90% of local screen.
+            # Supports screen orientation (Horizontal / Vertical)
             if ($localScreenWidth -le $selectedScreen.Width -or $localScreenHeight -le $selectedScreen.Height)
-            {          
-                $this.ViewerConfiguration.RequireResize = $true
-
-                $this.ResizeRatio = 90
+            {                          
+                $adjustRatio = 90
 
                 $adjustVertically = $localScreenWidth -gt $localScreenHeight
 
                 if ($adjustVertically)
                 {
-                    $this.ViewerConfiguration.VirtualDesktopWidth = [math]::Round(($localScreenWidth * $this.ResizeRatio) / 100)
+                    $this.ViewerConfiguration.VirtualDesktopWidth = [math]::Round(($localScreenWidth * $adjustRatio) / 100)
                     
                     $remoteResizedRatio = [math]::Round(($this.ViewerConfiguration.VirtualDesktopWidth * 100) / $selectedScreen.Width)
 
@@ -874,7 +875,7 @@ class ViewerSession
                 }
                 else
                 {
-                    $this.ViewerConfiguration.VirtualDesktopHeight = [math]::Round(($localScreenHeight * $this.ResizeRatio) / 100)
+                    $this.ViewerConfiguration.VirtualDesktopHeight = [math]::Round(($localScreenHeight * $adjustRatio) / 100)
                     
                     $remoteResizedRatio = [math]::Round(($this.ViewerConfiguration.VirtualDesktopHeight * 100) / $selectedScreen.Height)
 
@@ -882,20 +883,20 @@ class ViewerSession
                 }                        
             }
             else
-            {      
-                $this.ViewerConfiguration.RequireResize = ($this.ResizeRatio -ge 30 -and $this.ResizeRatio -le 90)
-
-                if ($this.ViewerConfiguration.RequireResize)
-                {
-                    $this.ViewerConfiguration.VirtualDesktopWidth = ($selectedScreen.Width * $this.ResizeRatio) / 100 
-                    $this.ViewerConfiguration.VirtualDesktopHeight = ($selectedScreen.Height * $this.ResizeRatio) / 100
-                }
-                else
-                {
-                    $this.ViewerConfiguration.VirtualDesktopWidth = $selectedScreen.Width
-                    $this.ViewerConfiguration.VirtualDesktopHeight = $selectedScreen.Height
-                }                
+            {                                  
+                $this.ViewerConfiguration.VirtualDesktopWidth = $selectedScreen.Width
+                $this.ViewerConfiguration.VirtualDesktopHeight = $selectedScreen.Height                              
             }    
+
+            # If remote desktop resize is forced, we apply defined ratio to current configuration            
+            if ($this.ResizeRatio -ge 30 -and $this.ResizeRatio -le 99)
+            {                
+                $this.ViewerConfiguration.VirtualDesktopWidth = ($selectedScreen.Width * $this.ResizeRatio) / 100 
+                $this.ViewerConfiguration.VirtualDesktopHeight = ($selectedScreen.Height * $this.ResizeRatio) / 100                
+            }
+
+            $this.ViewerConfiguration.RequireResize = $this.ViewerConfiguration.VirtualDesktopWidth -ne $selectedScreen.Width -or
+                                                      $this.ViewerConfiguration.VirtualDesktopHeight -ne $selectedScreen.Height
             
             $this.ViewerConfiguration.ScreenX_Delta = $selectedScreen.X
             $this.ViewerConfiguration.ScreenY_Delta = $selectedScreen.Y
@@ -909,7 +910,10 @@ class ViewerSession
             {
                 $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopWidth" -Value $this.ViewerConfiguration.VirtualDesktopWidth
                 $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopHeight" -Value $this.ViewerConfiguration.VirtualDesktopHeight
-            }
+
+                $this.ViewerConfiguration.ScreenX_Ratio = $selectedScreen.Width / $this.ViewerConfiguration.VirtualDesktopWidth
+                $this.ViewerConfiguration.ScreenY_Ratio = $selectedScreen.Height / $this.ViewerConfiguration.VirtualDesktopHeight                
+            }            
 
             Write-Verbose "@ViewerExpectation:"
             Write-Verbose $viewerExpectation
@@ -1496,7 +1500,7 @@ function Invoke-RemoteDesktopViewer
             If present, apply a resize ratio parameter to remote desktop.
 
         .PARAMETER ResizeRatio
-           Define the resize ratio of remote desktop (from 30 to 90).
+           Define the resize ratio of remote desktop (from 30 to 99).
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
@@ -1523,7 +1527,7 @@ function Invoke-RemoteDesktopViewer
 
         [switch] $Resize,
 
-        [ValidateRange(30, 90)]
+        [ValidateRange(30, 99)]
         [int] $ResizeRatio = 90
     )
 
@@ -1730,8 +1734,8 @@ function Invoke-RemoteDesktopViewer
                     
                     if ($session.ViewerConfiguration.RequireResize)
                     {
-                        $X = ($X * 100) / $session.ResizeRatio
-                        $Y = ($Y * 100) / $session.ResizeRatio
+                        $X *= $session.ViewerConfiguration.ScreenX_Ratio
+                        $Y *= $session.ViewerConfiguration.ScreenY_Ratio
                     }                    
       
                     $X += $session.ViewerConfiguration.ScreenX_Delta
