@@ -2,7 +2,7 @@
   <img src="Assets/iconv2.png" width="384"/>
 </p>
 
-# PowerRemoteDesktop
+# Power Remote Desktop
 
 <img src="Assets/demo.png" width="100%"/>
 
@@ -14,12 +14,14 @@ This project demonstrate why PowerShell contains the word *Power*. It is unfortu
 
 Tested on:
 
-* Windows 10 - PowerShell Version: 5.1.19041.1320
-* Windows 11 - PowerShell Version: 5.1.22000.282
+* **Windows 10** - PowerShell Version: 5.1.19041.1320
+* **Windows 11** - PowerShell Version: 5.1.22000.282
 
-Current version: **1.0.6 Stable**
+Current version: **2.0 Stable**
 
-## Features
+---
+
+## Highlighted Features
 
 https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b22c-a58e201bfe27.mp4
 
@@ -34,19 +36,43 @@ https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b
 * View Only mode for demonstration. You can disable remote control abilities and just show your screen to remote peer.
 * Session concurrency. Multiple viewers can connect to a single server at the same time.
 
-## Installation
+---
+
+## Setup everything in less than a minute (Fast Setup)
+
+````powershell
+Install-Module -Name PowerRemoteDesktop_Server
+
+Invoke-RemoteDesktopServer -CertificateFile "<certificate_location>"
+````
+
+If you are even more lazy and want to avoid using your own certificate, remove `CertificateFile` option but you will need to run PowerShell as Administrator.
+
+````powershell
+Install-Module -Name PowerRemoteDesktop_Viewer
+
+Invoke-RemoteDesktopServer -ServerAddress "<ip_address>" -Password "<the_one_displayed_on_server>"
+````
+
+Thats it 😉
+
+---
+
+## Detailed Installation and Instructions
 
 You will find multiple ways to use this PowerShell Applications. Recommended method would be to install both Server and Viewer using the PowerShell Gallery but you can also do it manually as an installed module or imported script.
 
-### Install as a PowerShell Module from PowerShell Gallery (Recommended)
+### Install as a PowerShell Module from PowerShell Gallery (**Recommended**)
 
 You can install Power Remote Desktop from PowerShell Gallery. See PowerShell Gallery as the 'equivalent' of Aptitude for Debian or Brew for MacOS.
 
 Run the following commands:
 
-`Install-Module -Name PowerRemoteDesktop_Server`
+```powershell
+Install-Module -Name PowerRemoteDesktop_Server
 
-`Install-Module -Name PowerRemoteDesktop_Viewer`
+Install-Module -Name PowerRemoteDesktop_Viewer
+```
 
 `AllowPrerelease` is mandatory when current version is marked as a *Prerelease*
 
@@ -63,7 +89,9 @@ Answer `Y` to proceed installation.
 
 Both modules should now be available, you can verify using the command:
 
-`Get-Module -ListAvailable`
+```powershell
+Get-Module -ListAvailable
+```
 
 Example Output:
 
@@ -84,9 +112,11 @@ Manifest   1.0.0      PowerRemoteDesktop_Viewer           Invoke-RemoteDesktopVi
 
 If you don't see them, run the following commands and check back.
 
-`Import-Module PowerRemoteDesktop_Server`
+```powershell
+Import-Module PowerRemoteDesktop_Server
 
-`Import-Module PowerRemoteDesktop_Viewer`
+Import-Module PowerRemoteDesktop_Viewer
+ ```
 
 ### Install as a PowerShell Module (Manually / Unmanaged)
 
@@ -94,7 +124,9 @@ To be available, the module must first be present in a registered module path.
 
 You can list module paths with following command:
 
-`Write-Output $env:PSModulePath`
+```powershell
+Write-Output $env:PSModulePath
+```
 
 Example Output:
 
@@ -104,13 +136,23 @@ C:\Users\Phrozen\Documents\WindowsPowerShell\Modules;C:\Program Files\WindowsPow
 
 Clone PowerRemoteDesktop repository or download a Github release package.
 
-`git clone https://github.com/DarkCoderSc/PowerRemoteDesktop.git`
+```
+git clone https://github.com/DarkCoderSc/PowerRemoteDesktop.git
+```
 
-Copy both *PowerRemoteDesktop_Viewer* and *PowerRemoteDesktop_Server* folders to desired module path (Ex: `C:\Users\<USER>\Documents\WindowsPowerShell\Modules`)
+Copy both *PowerRemoteDesktop_Viewer* and *PowerRemoteDesktop_Server* folders to desired module path 
+
+Example: 
+
+```
+C:\Users\<USER>\Documents\WindowsPowerShell\Modules
+```
 
 Both modules should now be available, you can verify using the command:
 
-`Get-Module -ListAvailable`
+```powershell
+Get-Module -ListAvailable
+```
 
 Example Output:
 
@@ -131,9 +173,11 @@ Manifest   1.0.0      PowerRemoteDesktop_Viewer           Invoke-RemoteDesktopVi
 
 If you don't see them, run the following commands and check back.
 
-`Import-Module PowerRemoteDesktop_Server`
+```powershell
+Import-Module PowerRemoteDesktop_Server
 
-`Import-Module PowerRemoteDesktop_Viewer`
+Import-Module PowerRemoteDesktop_Viewer
+```
 
 Notice: Manifest files are optional (`*.psd1`) and can be removed.
 
@@ -143,8 +187,17 @@ It is not mandatory to install this application as a PowerShell module (Even if 
 
 You can also load it as a PowerShell Script. Multiple methods exists including:
 
-* Invoking Commands Using: `IEX (Get-Content .\PowerRemoteDesktop_Viewer.psm1 -Raw)` and `IEX (Get-Content .\PowerRemoteDesktop_[Server/Viewer].psm1 -Raw)`
-* Loading script from a remote location: `IEX (New-Object Net.WebClient).DownloadString('http://127.0.0.1/PowerRemoteDesktop_[Server/Viewer].psm1)`
+Invoking Commands Using:
+
+```powershell
+IEX (Get-Content .\PowerRemoteDesktop_[Server/Viewer].psm1 -Raw)
+```
+
+Loading script from a remote location: 
+
+```powershell
+IEX (New-Object Net.WebClient).DownloadString('http://127.0.0.1/PowerRemoteDesktop_[Server/Viewer].psm1')
+```
 
 etc...
 
@@ -152,97 +205,67 @@ etc...
 
 ### Client
 
-`PowerRemoteDesktop_Viewer.psm1` module first need to be imported / installed on current PowerShell session.
+`PowerRemoteDesktop_Viewer.psm1` needs to be imported / or installed on local machine.
 
-Call `Invoke-RemoteDesktopViewer`
+#### Available Module Functions
 
-Supported options:
+```powershell
+Invoke-RemoteDesktopViewer
+Get-TrustedServers
+Remove-TrustedServer
+Clear-TrustedServers 
+```
 
-* **ServerAddress** (Default: `127.0.0.1`): Remote server host/address.
-* **ServerPort** (Default: `2801`): Remote server port.
-* **SecurePassword**: SecureString Password object used to authenticate with remote server (Recommended)
-* **Password**: Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead) 
-* **DisableVerbosity** (Default: None): If this switch is present, verbosity will be hidden from console.
-* **TLSv1_3** (Default: None): If this switch is present, viewer will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
-* **Clipboard** (Default: `Both`): Define clipboard synchronization rules:
-    * **Disabled**: Completely disable clipboard synchronization.
-    * **Receive**: Update local clipboard with remote clipboard only.
-    * **Send**: Send local clipboard to remote peer.
-    * **Both**: Clipboards are fully synchronized between Viewer and Server.
-* **ImageQuality** (Default: `100`): JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.
-* **Resize** (Default: None): If this switch is present, remote desktop resize will be forced according ResizeRatio option value.
-* **ResizeRatio** (Default: `90`): Define the resize ratio to apply to remote desktop (30 to 99)
-* **AlwaysOnTop** (Default: None): If this switch is present, virtual desktop form will be above all other windows.
+#### Invoke-RemoteDesktopViewer
+
+Create a new remote desktop session with a Power Remote Desktop Server.
+
+##### ⚙️ Supported Options:
+
+| Parameter         | Type             | Default    | Description  |
+|-------------------|------------------|------------|--------------|
+| ServerAddress     | String           | 127.0.0.1  | Remote server host/address  |
+| ServerPort        | Integer          | 2801       | Remote server port |
+| SecurePassword    | SecureString     | None       | SecureString object containing password used to authenticate with remote server (Recommended) |
+| Password          | String           | None       | Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead) |
+| DisableVerbosity  | Switch           | False      | If present, program wont show verbosity messages |
+| UseTLSv1_3        | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
+| Clipboard         | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
+| ImageQuality      | Integer (0-100)  | 100        | JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality. |
+| Resize            | Switch           | False      | If present, remote desktop will get resized accordingly with `ResizeRatio` option. |
+| ResizeRatio       | Integer (30-99)  | 90         | Used with `Resize` option, define the resize ratio in percentage. |
+| AlwaysOnTop       | Switch           | False      | If present, virtual desktop form will be above all other window's |
+
+##### Clipboard Mode Enum Properties
+
+| Value             | Description      | 
+|-------------------|------------------|
+| Disabled          | Clipboard synchronization is disabled in both side |
+| Receive           | Only incomming clipboard is allowed |
+| Send              | Only outgoing clipboard is allowed |
+| Both              | Clipboard synchronization is allowed on both side |
+
+##### ⚠️ Important Notices
+
+Prefer using `SecurePassword` over plain-text password even if a plain-text password is getting converted to `SecureString` anyway.
 
 #### Example
 
-`Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)`
+Open a new remote desktop session to `127.0.0.1:2801` with password `urCompl3xP@ssw0rd`
 
-### Server
+```powershell
+Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)
+```
 
-`PowerRemoteDesktop_Server.psm1` module first need to be imported / installed on current PowerShell session.
+#### Enumerate Trusted Servers
 
-Call `Invoke-RemoteDesktopServer`
+When a fingerprint is met for the first time, viewer will ask you if you want to trust this new remote server fingerprint.
 
-Supported options:
+When you choose the `[A] Always` option, this fingerprint will be saved to local user registry. If you change your mind, you can revoke trsuted fingerprint at any time using dedicated functions.
 
-* **ListenAddress** (Default: `0.0.0.0`): Define in which interface to listen for new viewer.
-    * **0.0.0.0** : All interfaces
-    * **127.0.0.1**: Localhost interface
-    * **x.x.x.x**: Specific interface (Replace `x` with a valid network address)
-* **ListenPort** (Default: `2801`): Define in which port to listen for new viewer.
-* **SecurePassword**: SecureString Password object used by remote viewer to authenticate with server (Recommended)
-* **Password**: Plain-Text Password used by remote viewer to authenticate with server (Not recommended, use SecurePassword instead)
-* **CertificateFile** (Default: **None**): A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
-* **EncodedCertificate** (Default: **None**): A valid X509 Certificate (With Private Key) encoded as a Base64 String.
-* **TLSv1_3** (Default: None): If this switch is present, server will use TLS v1.3 instead of TLS v1.2. Use this option only if both viewer and server support TLS v1.3.
-* **DisableVerbosity** (Default: None): If this switch is present, verbosity will be hidden from console.
-* **Clipboard** (Default: `Both`): Define clipboard synchronization rules:
-    * **Disabled**: Completely disable clipboard synchronization.
-    * **Receive**: Update local clipboard with remote clipboard only.
-    * **Send**: Send local clipboard to remote peer.
-    * **Both**: Clipboards are fully synchronized between Viewer and Server.
-* **ViewOnly** (Default: None): If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. Useful for view session only.
-
-If no certificate option is set, then a default X509 Certificate is generated and installed on local machine (Requires Administrative Privilege)
-
-##### Example
-
-`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)`
-
-`Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force) -CertificateFile "c:\certs\phrozen.p12"`
-
-#### Generate and pass your own X509 Certificate
-
-Passing your own X509 Certificate is very useful if you want to avoid running your PowerShell Instance as Administrator.
-
-You can easily create your own X509 Certificate using OpenSSL Command Line Tool.
-
-##### Generate your Certificate
-
-`openssl req -x509 -sha512 -nodes -days 365 -newkey rsa:4096 -keyout phrozen.key -out phrozen.crt`
-
-Then export the new certificate with Private Key Included.
-
-`openssl pkcs12 -export -out phrozen.p12 -inkey phrozen.key -in phrozen.crt`
-
-##### Use it as file
-
-Pass the certificate file to parameter `CertificateFile`.
-
-##### Use it as Encoded Base64 String
-
-First encode your certificate file as base64 string.
-
-`base64 -i phrozen.p12`
-
-Then pass the encoded string to parameter `EncodedCertificate`.
-
-### List trusted servers
-
-It is now possible to persistantly trust server using a local storage (Windows User Registry Hive)
-
-`Get-TrustedServers`
+```powershell
+Get-TrustedServers
+```
 
 Example output:
 
@@ -251,16 +274,117 @@ PS C:\Users\Phrozen\Desktop\Projects\PowerRemoteDesktop> Get-TrustedServers
 
 Detail                           Fingerprint
 ------                           -----------
-@{FirstSeen=14/01/2022 11:06:16} EA88AADA402864D1864542F7F2A3C49E56F473B0
+@{FirstSeen=18/01/2022 19:40:24} D9F4637463445D6BB9F3EFBF08E06BE4C27035AF
+@{FirstSeen=20/01/2022 15:52:33} 3FCBBFB37CF6A9C225F7F582F14AC4A4181BED53
+@{FirstSeen=20/01/2022 16:32:14} EA88AADA402864D1864542F7F2A3C49E56F473B0
+@{FirstSeen=21/01/2022 12:24:18} 3441CE337A59FC827466FC954F2530C76A3F8FE4
 ````
 
-### Delete trusted server (Permanently)
+### Permanently Delete a Trusted Server
 
-`Remove-TrustedServer`
+```powershell
+Remove-TrustedServer -Fingerprint "<target_ingerprint>"
+```
 
-### Delete all trusted servers (Permanently)
+### Permanently Delete all Trusted Servers (Purge)
 
-`Clear-TrustedServers`
+```powershell
+Clear-TrustedServers
+```
+
+---
+
+### Server
+
+`PowerRemoteDesktop_Server.psm1` needs to be imported / or installed on local machine.
+
+#### Available Module Functions
+
+```powershell
+Invoke-RemoteDesktopServer
+```
+
+##### ⚙️ Supported Options:
+ 
+| Parameter          | Type             | Default    | Description  |
+|--------------------|------------------|------------|--------------|
+| ServerAddress      | String           | 0.0.0.0    | IP Address that represents the local IP address |
+| ServerPort         | Integer          | 2801       | The port on which to listen for incoming connection |
+| SecurePassword     | SecureString     | None       | SecureString object containing password used to authenticate remote viewer (Recommended) |
+| Password           | String           | None       | Plain-Text Password used to authenticate remote viewer (Not recommended, use SecurePassword instead) |
+| DisableVerbosity   | Switch           | False      | If present, program wont show verbosity messages |
+| UseTLSv1_3         | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
+| Clipboard          | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
+| CertificateFile    | String           | None       | A file containing valid certificate information (x509), must include the **private key**  |
+| EncodedCertificate | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
+| ViewOnly           | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
+
+##### Server Address Examples
+
+| Value             | Description      | 
+|-------------------|------------------|
+| 127.0.0.1         | Only listen for localhost connection (most likely for debugging purpose) |
+| 0.0.0.0           | Listen on all network interfaces (Local, LAN, WAN) |
+
+##### Clipboard Mode Enum Properties
+
+| Value             | Description      | 
+|-------------------|------------------|
+| Disabled          | Clipboard synchronization is disabled in both side |
+| Receive           | Only incomming clipboard is allowed |
+| Send              | Only outgoing clipboard is allowed |
+| Both              | Clipboard synchronization is allowed on both side |
+
+##### ⚠️ Important Notices
+
+1. Prefer using `SecurePassword` over plain-text password even if a plain-text password is getting converted to `SecureString` anyway.
+2. Not specifying a custom certificate using `CertificateFile` or `EncodedCertificate` result in generating a default self-signed certificate (if not already generated) that will get installed on local machine thus requiring administrator privilege. If you want to run the server as a non-privileged account, specify your own certificate location.
+3. If you don't specify a `SecurePassword` or `Password`, a random complex password will be generated and displayed on terminal (this password is temporary).
+
+##### Examples
+
+```powershell
+Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)
+
+Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force) -CertificateFile "c:\certs\phrozen.p12"
+```
+
+#### Generate and pass your own X509 Certificate
+
+⚠️ Remember that not using your own X509 certificate will result in requiring administrator privilege to create a new server.
+
+Fortunately, you can easily create your own X509 certificate for example with the help of [OpenSSL command line tool](https://www.openssl.org).
+
+##### Generate your Certificate
+
+```
+openssl req -x509 -sha512 -nodes -days 365 -newkey rsa:4096 -keyout phrozen.key -out phrozen.crt
+```
+
+Then export the new certificate (**must include private key**).
+
+```
+openssl pkcs12 -export -out phrozen.p12 -inkey phrozen.key -in phrozen.crt
+```
+
+##### Integrate to server as a file
+
+Use `CertificateFile`. Example: `c:\tlscert\phrozen.crt`
+
+##### Integrate to server as a base64 representation
+
+Encode an existing certificate using PowerShell
+
+```powershell
+[convert]::ToBase64String((Get-Content -path "c:\tlscert\phrozen.crt" -Encoding byte))
+```
+or on Linux / Mac systems
+
+```
+base64 -i /tmp/phrozen.p12
+```
+
+You can then pass the output base64 certificate file to parameter `EncodedCertificate` (One line)
 
 ## Changelog
 
@@ -353,4 +477,6 @@ Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre
 cannot be held liable for the availability of, or the content located on or through it.
 Plus, any losses or damages occurred from using these contents or the internet
 generally.
+---
 
+Made with ❤️ in 🇫🇷
