@@ -51,7 +51,7 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "1.0.6"
+$global:PowerRemoteDesktopVersion = "2.0.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -70,6 +70,21 @@ enum ClipboardMode {
     Receive = 2
     Send = 3
     Both = 4
+}
+
+enum ProtocolCommand {
+    Success = 1
+    Fail = 2
+    RequestSession = 3
+    AttachToSession = 4
+    BadRequest = 5
+    ResourceFound = 6
+    ResourceNotFound = 7
+}
+
+enum WorkerKind {
+    Desktop = 1
+    Events = 2
 }
 
 function Write-Banner 
@@ -355,7 +370,7 @@ function Resolve-AuthenticationChallenge
 class ClientIO {
     [string] $RemoteAddress
     [int] $RemotePort
-    [bool] $TLSv1_3
+    [bool] $UseTLSv1_3
 
     [System.Net.Sockets.TcpClient] $Client = $null
     [System.Net.Security.SslStream] $SSLStream = $null
@@ -374,16 +389,16 @@ class ClientIO {
             .PARAMETER RemotePort
                 Remote server port.
 
-            .PARAMETER TLSv1_3
+            .PARAMETER UseTLSv1_3
                 Define whether or not SSL/TLS v1.3 must be used.
         #>
         [string] $RemoteAddress = "127.0.0.1",
         [int] $RemotePort = 2801,
-        [bool] $TLSv1_3 = $false
+        [bool] $UseTLSv1_3 = $false
     ) {
         $this.RemoteAddress = $RemoteAddress
         $this.RemotePort = $RemotePort
-        $this.TLSv1_3 = $TLSv1_3
+        $this.UseTLSv1_3 = $UseTLSv1_3
     }
 
     [void]Connect() {
@@ -398,7 +413,7 @@ class ClientIO {
 
         Write-Verbose "Connected."
 
-        if ($this.TLSv1_3)
+        if ($this.UseTLSv1_3)
         {
             $TLSVersion = [System.Security.Authentication.SslProtocols]::TLS13
         }
@@ -551,7 +566,7 @@ class ClientIO {
         $this.Writer.WriteLine($challengeSolution)
 
         $result = $this.Reader.ReadLine()
-        if ($result -eq "OK.")
+        if ($result -eq [ProtocolCommand]::Success)
         {
             Write-Verbose "Solution accepted. Authentication success."                
         }            
@@ -562,155 +577,91 @@ class ClientIO {
     
     }
 
-    [void]Hello([string] $SessionId) {
-        <#
-            .SYNOPSIS
-                This method must be called after Password-Authentication to finalise an established
-                connection with server.                
-
-            .PARAMETER SessionId
-                A String containing the Session Id.
-        #>
-
-        Write-Verbose "Say Hello..."
-
-        $this.Writer.WriteLine($SessionId)
-
-        $result = $this.Reader.ReadLine()
-        if ($result -eq "HELLO.")
-        {
-            Write-Verbose "Server Hello back."
-        }            
-        else 
-        {
-            throw "Could not finalise connection with remote server. Session Id is wrong or was terminated."
-        }
+    [string] RemoteAddress() {
+        return $this.Client.Client.RemoteEndPoint.Address
     }
-    
-    [PSCustomObject]Hello(){
+
+    [int] RemotePort() {
+        return $this.Client.Client.RemoteEndPoint.Port
+    }
+
+    [string] LocalAddress() {
+        return $this.Client.Client.LocalEndPoint.Address
+    }    
+
+    [int] LocalPort() {
+        return $this.Client.Client.LocalEndPoint.Port
+    }
+
+    [string] ReadLine([int] $Timeout) 
+    {
         <#
             .SYNOPSIS
-                This method must be called after Password-Authentication to finalise an established
-                connection with server.
+                Read string message from remote peer with timeout support.
 
-            .DESCRIPTION
-                This method is called when no session is already present. Server will send several informations 
-                including a new session id the store.
-
-                TODO: Instead of PSCustomObject, create a specific class ?
+            .PARAMETER Timeout
+                Define the maximum time (in milliseconds) to wait for remote peer message.
         #>
-        
-        Write-Verbose "Say Hello..."
-
-        $jsonObject = $this.Reader.ReadLine()
-
-        Write-Verbose "@SessionInformation:"
-        Write-Verbose $jsonObject
-        Write-Verbose "---"
-
-        $sessionInformation = $jsonObject | ConvertFrom-Json
-        if (
-            (-not ($sessionInformation.PSobject.Properties.name -contains "MachineName")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "Username")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "WindowsVersion")) -or                      
-            (-not ($sessionInformation.PSobject.Properties.name -contains "SessionId")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "Version")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "Screens")) -or
-            (-not ($sessionInformation.PSobject.Properties.name -contains "ViewOnly"))
-        )
+        $defautTimeout = $this.SSLStream.ReadTimeout
+        try
         {
-            throw "Invalid session information data."
-        }   
-        
-        if ($sessionInformation.Version -ne $global:PowerRemoteDesktopVersion)
-        {
-            throw "Server and Viewer version mismatch.`r`n`
-            Local: ""${global:PowerRemoteDesktopVersion}""`r`n`
-            Remote: ""$($sessionInformation.Version)""`r`n`
-            You cannot use two different version between Viewer and Server."
+            $this.SSLStream.ReadTimeout = $Timeout
+
+            return $this.Reader.ReadLine()        
         }
-
-        if ($sessionInformation.ViewOnly)
+        finally
         {
-            Write-Host "You are only authorized to view remote desktop (Mouse / Keyboard not authorized)" -ForegroundColor Cyan
-        }
+            $this.SSLStream.ReadTimeout = $defautTimeout
+        }        
+    }
 
-        # Check if remote server have multiple screens
-        $selectedScreen = $null
+    [string] ReadLine() 
+    {
+        <#
+            .SYNOPSIS
+                Shortcut to Reader ReadLine method. No timeout support.
+        #>
+        return $this.Reader.ReadLine()
+    }
 
-        if ($sessionInformation.Screens.Length -gt 1)
-        {
-            Write-Verbose "Remote Server have $($sessionInformation.Screens.Length) Screens."
+    [void] WriteJson([PSCustomObject] $Object)
+    {
+        <#
+            .SYNOPSIS
+                Transform a PowerShell Object as a JSON Representation then send to remote
+                peer.
 
-            Write-Host "Remote Server have " -NoNewLine
-            Write-Host $($sessionInformation.Screens.Length) -NoNewLine -ForegroundColor Green
-            Write-Host " Screens:`r`n"
+            .PARAMETER Object
+                A PowerShell Object to be serialized as JSON String.
+        #>
 
-            foreach ($screen in $sessionInformation.Screens)
-            {
-                Write-Host $screen.Id -NoNewLine -ForegroundColor Cyan
-                Write-Host " - $($screen.Name)" -NoNewLine
+        $this.Writer.WriteLine(($Object | ConvertTo-Json -Compress))
+    }
 
-                if ($screen.Primary)
-                {
-                    Write-Host " (" -NoNewLine
-                    Write-Host "Primary" -NoNewLine -ForegroundColor Cyan
-                    Write-Host ")" -NoNewLine
-                }
+    [void] WriteLine([string] $Value)
+    {
+        $this.Writer.WriteLine($Value)
+    }
 
-                Write-Host ""
-            }                                    
+    [PSCustomObject] ReadJson([int] $Timeout)
+    {
+        <#
+            .SYNOPSIS
+                Read json string from remote peer and attempt to deserialize as a PowerShell Object.
 
-            while ($true)
-            {
-                $choice = Read-Host "`r`nPlease choose which screen index to capture (Default: Primary)"
+            .PARAMETER Timeout
+                Define the maximum time (in milliseconds) to wait for remote peer message.
+        #>
+        return ($this.ReadLine($Timeout) | ConvertFrom-Json)
+    }
 
-                if (-not $choice)
-                {
-                    # Select-Object -First 1 should also grab the Primary Screen (Since it is ordered).
-                    $selectedScreen = $sessionInformation.Screens | Where-Object -FilterScript { $_.Primary -eq $true }
-                }
-                else 
-                {
-                    if (-not $choice -is [int]) {
-                        Write-Host "You must enter a valid index (integer), starting at 1."
-
-                        continue
-                    }                    
-
-                    $selectedScreen = $sessionInformation.Screens | Where-Object -FilterScript { $_.Id -eq $choice }
-
-                    if (-not $selectedScreen)
-                    {
-                        Write-Host "Invalid choice, please choose an existing screen index." -ForegroundColor Red
-                    }
-                }
-
-                if ($selectedScreen)
-                {
-                    $this.Writer.WriteLine($selectedScreen.Name)
-
-                    break
-                }
-            }            
-        }
-        else
-        {
-            $selectedScreen = $sessionInformation.Screens | Select-Object -First 1
-        }
-
-        if (-not $selectedScreen)
-        {
-            throw "No screen to capture."
-        }
-
-        Write-Verbose "@SelectedScreen:"
-        Write-Verbose $selectedScreen
-        Write-Verbose "---"        
-
-        $sessionInformation | Add-Member -MemberType NoteProperty -Name "Screen" -Value $selectedScreen
-
-        return $sessionInformation
+    [PSCustomObject] ReadJson()
+    {
+        <#
+            .SYNOPSIS
+                Alternative to ReadJson without timeout support.                
+        #>
+        return ($this.ReadLine() | ConvertFrom-Json)    
     }
 
     [void]Close() {
@@ -745,13 +696,28 @@ class ClientIO {
     }
 }
 
+class ViewerConfiguration
+{
+    [bool] $RequireResize = $false    
+    [int] $VirtualDesktopWidth = 0
+    [int] $VirtualDesktopHeight = 0
+    [int] $ScreenX_Delta = 0
+    [int] $ScreenY_Delta = 0
+    [float] $ScreenX_Ratio = 1
+    [float] $ScreenY_Ratio = 1    
+}
+
 class ViewerSession
 {
-    [PSCustomObject] $SessionInformation = $null
+    [PSCustomObject] $ServerInformation = $null
+    [ViewerConfiguration] $ViewerConfiguration = $null
+
     [string] $ServerAddress = "127.0.0.1"
     [string] $ServerPort = 2801
     [SecureString] $SecurePassword = $null
-    [bool] $TLSv1_3 = $false        
+    [bool] $UseTLSv1_3 = $false       
+    [int] $ImageCompressionQuality = 100 
+    [int] $ResizeRatio = 0
 
     [ClientIO] $ClientDesktop = $null
     [ClientIO] $ClientEvents = $null
@@ -760,33 +726,10 @@ class ViewerSession
         [string] $ServerAddress,
         [int] $ServerPort,
         [SecureString] $SecurePassword,
-        [bool] $TLSv1_3
+        [bool] $UseTLSv1_3,
+        [int] $ImageCompressionQuality
     )    
-    {
-        <#
-            .SYNOPSIS
-                Create a new viewer session object.
-
-            .DESCRIPTION
-                This object will contain session information including active connection
-                objects (ClientIO)
-
-            .PARAMETER ServerAddress
-            Remote Server Address.
-
-            .PARAMETER ServerPort
-                Remote Server Port.
-
-            .PARAMETER SecureString
-                Password used during server authentication.
-
-            .PARAMETER TLSv1_3
-                Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
-                Recommended if possible.
-        #>
-
-        # TODO: Check if ServerAddress is a valid host.
-        
+    {                    
         # Or: System.Management.Automation.Runspaces.MaxPort (High(Word))
         if ($ServerPort -lt 0 -and $ServerPort -gt 65535)
         {
@@ -796,58 +739,304 @@ class ViewerSession
         $this.ServerAddress = $ServerAddress
         $this.ServerPort = $ServerPort 
         $this.SecurePassword = $SecurePassword
-        $this.TLSv1_3 = $TLSv1_3           
+        $this.UseTLSv1_3 = $UseTLSv1_3           
+        $this.ImageCompressionQuality = $ImageCompressionQuality
     }
 
     [void] OpenSession() {
         <#
             .SYNOPSIS
-                Establish a new complete session with remote server.
-
-            .DESCRIPTION
-                This method handle both session handshake and Password-Authentication.
+                Request a new session with remote server.
         #>        
-        Write-Verbose "Open new session with remote server: ""$($this.ServerAddress):$($this.ServerPort)""..."
 
-        if ($this.SessionInformation)
+        Write-Verbose "Request new session with remote server: ""$($this.ServerAddress):$($this.ServerPort)""..."
+
+        if ($this.ServerInformation)
         {
-            throw "An session already exists. Close existing session first."
+            throw "A session already exists."
         }
 
         Write-Verbose "Establish first contact with remote server..."
-
-        $this.ClientDesktop = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.TLSv1_3)
+        
+        $client = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.UseTLSv1_3)
         try
         {
-            $this.ClientDesktop.Connect()        
+            $client.Connect()        
 
-            $this.ClientDesktop.Authentify($this.SecurePassword)
+            $client.Authentify($this.SecurePassword)
 
-            $this.SessionInformation = $this.ClientDesktop.Hello()
+            Write-Verbose "Request session..."
 
-            if (-not $this.SessionInformation)
+            $client.WriteLine(([ProtocolCommand]::RequestSession))
+
+            $this.ServerInformation = $client.ReadJson()
+
+            Write-Verbose "@ServerInformation:"
+            Write-Verbose $this.ServerInformation
+            Write-Verbose "---"
+
+            if (
+                (-not ($this.ServerInformation.PSobject.Properties.name -contains "SessionId")) -or
+                (-not ($this.ServerInformation.PSobject.Properties.name -contains "Version")) -or
+                (-not ($this.ServerInformation.PSobject.Properties.name -contains "ViewOnly")) -or
+
+                (-not ($this.ServerInformation.PSobject.Properties.name -contains "MachineName")) -or
+                (-not ($this.ServerInformation.PSobject.Properties.name -contains "Username")) -or
+                (-not ($this.ServerInformation.PSobject.Properties.name -contains "WindowsVersion")) -or                                      
+                (-not ($this.ServerInformation.PSobject.Properties.name -contains "Screens"))                
+            )
             {
-                throw "Session cannot be null."
+                throw "Invalid server information object."
+            }  
+
+            Write-Verbose "Server informations acknowledged, prepare and send our expectation..."
+
+            if ($this.ServerInformation.Version -ne $global:PowerRemoteDesktopVersion)
+            {
+                throw "Server and Viewer version mismatch.`r`n`
+                Local: ""${global:PowerRemoteDesktopVersion}""`r`n`
+                Remote: ""$($this.ServerInformation.Version)""`r`n`
+                You cannot use two different version between Viewer and Server."
             }
 
-            Write-Verbose "Open secondary tunnel for input control..."
-
-            $this.ClientEvents = [ClientIO]::new($this.ServerAddress, $this.ServerPort, $this.TLSv1_3) 
-            $this.ClientEvents.Connect()    
+            if ($this.ServerInformation.ViewOnly)
+            {
+                Write-Host "You are accessing a read-only desktop." -ForegroundColor Cyan
+            }
             
-            $this.ClientEvents.Authentify($this.SecurePassword)
+            # Define which screen we want to capture
+            $selectedScreen = $null
 
-            $this.ClientEvents.Hello($this.SessionInformation.SessionId)
+            if ($this.ServerInformation.Screens.Length -gt 1)
+            {
+                Write-Verbose "Remote server have $($this.ServerInformation.Screens.Length) screens."
 
-            Write-Verbose "New session successfully established with remote server."
-            Write-Verbose "Session Id: $($this.SessionInformation.SessionId)"
-        }
+                Write-Host "Remote server have " -NoNewLine
+                Write-Host $($this.ServerInformation.Screens.Length) -NoNewLine -ForegroundColor Green
+                Write-Host " different screens:`r`n"
+
+                foreach ($screen in $this.ServerInformation.Screens)
+                {
+                    Write-Host $screen.Id -NoNewLine -ForegroundColor Cyan
+                    Write-Host " - $($screen.Name)" -NoNewLine
+
+                    if ($screen.Primary)
+                    {
+                        Write-Host " (" -NoNewLine
+                        Write-Host "Primary" -NoNewLine -ForegroundColor Cyan
+                        Write-Host ")" -NoNewLine
+                    }
+
+                    Write-Host ""
+                }                                    
+
+                while ($true)
+                {
+                    $choice = Read-Host "`r`nPlease choose which screen index to capture (Default: Primary)"
+
+                    if (-not $choice)
+                    {
+                        # Select-Object -First 1 should also grab the Primary Screen (Since it is ordered).
+                        $selectedScreen = $this.ServerInformation.Screens | Where-Object -FilterScript { $_.Primary -eq $true }
+                    }
+                    else 
+                    {
+                        if (-not $choice -is [int]) {
+                            Write-Host "You must enter a valid index (integer), starting at 1."
+
+                            continue
+                        }                    
+
+                        $selectedScreen = $this.ServerInformation.Screens | Where-Object -FilterScript { $_.Id -eq $choice }
+
+                        if (-not $selectedScreen)
+                        {
+                            Write-Host "Invalid choice, please choose an existing screen index." -ForegroundColor Red
+                        }
+                    }
+
+                    if ($selectedScreen)
+                    {                        
+                        break
+                    }
+                }            
+            }
+            else
+            {
+                $selectedScreen = $this.ServerInformation.Screens | Select-Object -First 1
+            }            
+
+            # Define our Virtual Desktop Form constraints
+            $localScreenWidth = Get-LocalScreenWidth
+            $localScreenHeight = (Get-LocalScreenHeight) - (Get-WindowCaptionHeight)
+
+            $this.ViewerConfiguration = [ViewerConfiguration]::New()                 
+
+            # If remote screen is bigger than local screen, we will resize remote screen to fit 90% of local screen.
+            # Supports screen orientation (Horizontal / Vertical)
+            if ($localScreenWidth -le $selectedScreen.Width -or $localScreenHeight -le $selectedScreen.Height)
+            {                          
+                $adjustRatio = 90
+
+                $adjustVertically = $localScreenWidth -gt $localScreenHeight
+
+                if ($adjustVertically)
+                {
+                    $this.ViewerConfiguration.VirtualDesktopWidth = [math]::Round(($localScreenWidth * $adjustRatio) / 100)
+                    
+                    $remoteResizedRatio = [math]::Round(($this.ViewerConfiguration.VirtualDesktopWidth * 100) / $selectedScreen.Width)
+
+                    $this.ViewerConfiguration.VirtualDesktopHeight = [math]::Round(($selectedScreen.Height * $remoteResizedRatio) / 100)
+                }
+                else
+                {
+                    $this.ViewerConfiguration.VirtualDesktopHeight = [math]::Round(($localScreenHeight * $adjustRatio) / 100)
+                    
+                    $remoteResizedRatio = [math]::Round(($this.ViewerConfiguration.VirtualDesktopHeight * 100) / $selectedScreen.Height)
+
+                    $this.ViewerConfiguration.VirtualDesktopWidth = [math]::Round(($selectedScreen.Width * $remoteResizedRatio) / 100)
+                }                        
+            }
+            else
+            {                                  
+                $this.ViewerConfiguration.VirtualDesktopWidth = $selectedScreen.Width
+                $this.ViewerConfiguration.VirtualDesktopHeight = $selectedScreen.Height                              
+            }    
+
+            # If remote desktop resize is forced, we apply defined ratio to current configuration            
+            if ($this.ResizeRatio -ge 30 -and $this.ResizeRatio -le 99)
+            {                
+                $this.ViewerConfiguration.VirtualDesktopWidth = ($selectedScreen.Width * $this.ResizeRatio) / 100 
+                $this.ViewerConfiguration.VirtualDesktopHeight = ($selectedScreen.Height * $this.ResizeRatio) / 100                
+            }
+
+            $this.ViewerConfiguration.RequireResize = $this.ViewerConfiguration.VirtualDesktopWidth -ne $selectedScreen.Width -or
+                                                      $this.ViewerConfiguration.VirtualDesktopHeight -ne $selectedScreen.Height
+            
+            $this.ViewerConfiguration.ScreenX_Delta = $selectedScreen.X
+            $this.ViewerConfiguration.ScreenY_Delta = $selectedScreen.Y
+
+            $viewerExpectation = New-Object PSCustomObject -Property @{    
+                ScreenName = $selectedScreen.Name 
+                ImageCompressionQuality = $this.ImageCompressionQuality            
+            }
+
+            if ($this.ViewerConfiguration.RequireResize)
+            {
+                $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopWidth" -Value $this.ViewerConfiguration.VirtualDesktopWidth
+                $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopHeight" -Value $this.ViewerConfiguration.VirtualDesktopHeight
+
+                $this.ViewerConfiguration.ScreenX_Ratio = $selectedScreen.Width / $this.ViewerConfiguration.VirtualDesktopWidth
+                $this.ViewerConfiguration.ScreenY_Ratio = $selectedScreen.Height / $this.ViewerConfiguration.VirtualDesktopHeight                
+            }            
+
+            Write-Verbose "@ViewerExpectation:"
+            Write-Verbose $viewerExpectation
+            Write-Verbose "---"
+
+            $client.WriteJson($viewerExpectation)
+
+            if ($client.ReadLine(5 * 1000) -cne [ProtocolCommand]::Success)
+            {
+                throw "Remote server did not respond to our expectation in time."
+            }
+        } 
         catch
         {            
             $this.CloseSession()
 
-            throw "Open Session Error. Detail: ""$($_)"""
-        }        
+            throw "Could not open a new session with error: ""$($_)"""
+        }    
+        finally
+        {
+            if ($client)
+            {
+                $client.Close()
+            }
+        }    
+    }
+
+    [ClientIO] ConnectWorker([WorkerKind] $WorkerKind)
+    {
+        Write-Verbose "Connect new worker: ""$WorkerKind""..."
+
+        $this.CheckSession()
+
+        $client = [ClientIO]::New($this.ServerAddress, $this.ServerPort, $this.UseTLSv1_3)
+        try
+        {            
+            $client.Connect()
+
+            $client.Authentify($this.SecurePassword)
+
+            $client.WriteLine(([ProtocolCommand]::AttachToSession))
+
+            Write-Verbose "Attach worker to remote session ""$($this.ServerInformation.SessionId)"""
+
+            $client.WriteLine($this.ServerInformation.SessionId)
+
+            switch ([ProtocolCommand] $client.ReadLine(5 * 1000))
+            {
+                ([ProtocolCommand]::ResourceFound)
+                {
+                    Write-Verbose "Worker successfully attached to session, define which kind of worker we are..."
+
+                    $client.WriteLine($WorkerKind)
+
+                    Write-Verbose "Worker ready."
+
+                    break
+                }
+
+                ([ProtocolCommand]::ResourceNotFound)
+                {
+                    throw "Server could not locate session."
+                }                
+
+                default
+                {
+                    throw "Unexpected answer from remote server for session attach."
+                }
+            }
+
+            return $client
+        }
+        catch
+        {
+            if ($client)
+            {
+                $client.Close()
+            }
+
+            throw "Could not connect worker with error: $($_)"
+        }
+    }
+
+    [void] ConnectDesktopWorker()
+    {
+        Write-Verbose "Create new desktop streaming worker..."
+
+        $this.ClientDesktop = $this.ConnectWorker([WorkerKind]::Desktop)
+    }
+
+    [void] ConnectEventsWorker()
+    {
+        Write-Verbose "Create new event event (in/out) worker..."
+
+        $this.ClientEvents = $this.ConnectWorker([WorkerKind]::Events)
+    }    
+
+    [bool] HasSession()
+    {
+        return $this.ServerInformation -and $this.ViewerConfiguration
+    }
+
+    [void] CheckSession()
+    {
+        if (-not $this.HasSession)
+        {
+            throw "Session is missing."
+        }
     }
 
     [void] CloseSession() {
@@ -872,7 +1061,8 @@ class ViewerSession
         $this.ClientDesktop = $null
         $this.ClientEvents = $null
         
-        $this.SessionInformation = $null
+        $this.ServerInformation = $null
+        $this.ViewerConfiguration = $null
         
         Write-Verbose "Session closed."
     }
@@ -880,86 +1070,20 @@ class ViewerSession
 }
 
 $global:VirtualDesktopUpdaterScriptBlock = {   
-    
-    function Invoke-SmoothResize
-    {
-        <#
-            .SYNOPSIS
-                Output a resized version of input bitmap. The resize quality is quite fair.
-                
-            .PARAMETER OriginalImage
-                Input bitmap to resize.
-
-            .PARAMETER NewWidth
-                Define the width of new bitmap version.
-
-            .PARAMETER NewHeight
-                Define the height of new bitmap version.
-
-            .PARAMETER HighQuality
-                Activate high quality image resizing with a serious performance cost.
-
-            .EXAMPLE
-                Invoke-SmoothResize -OriginalImage $myImage -NewWidth 1920 -NewHeight 1024
-        #>
-        param (
-            [Parameter(Mandatory=$true)]
-            [System.Drawing.Bitmap] $OriginalImage,
-
-            [Parameter(Mandatory=$true)]
-            [int] $NewWidth,
-
-            [Parameter(Mandatory=$true)]
-            [int] $NewHeight,
-
-            [bool] $HighQuality = $false
-        )
-        try
-        {    
-            $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $NewWidth, $NewHeight
-
-            $resizedImage = [System.Drawing.Graphics]::FromImage($bitmap)
-
-            if ($HighQuality)
-            {
-                $resizedImage.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-                $resizedImage.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-                $resizedImage.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-                $resizedImage.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality 
-            }
-            
-            $resizedImage.DrawImage($OriginalImage, 0, 0, $bitmap.Width, $bitmap.Height)
-
-            return $bitmap
-        }
-        finally
-        {
-            if ($OriginalImage)
-            {
-                $OriginalImage.Dispose()
-            }
-
-            if ($resizedImage)
-            {
-                $resizedImage.Dispose()
-            }
-        }
-    }
-
     try
     {       
         $packetSize = 9216 # 9KiB        
         
         while ($true)
-        {      
+        {                  
             $stream = New-Object System.IO.MemoryStream
             try
             {                            
-                $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)
+                $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)                
 
-                $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)
-
-                [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                
+                $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)    
+                            
+                [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                                
 
                 $stream.SetLength($totalBufferSize)
 
@@ -978,17 +1102,8 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 } until ($stream.Position -eq $stream.Length)                 
 
                 $stream.Position = 0                                                                
-
-                if ($Param.RequireResize)
-                {                        
-                    $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $stream
-
-                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = Invoke-SmoothResize -OriginalImage $bitmap -NewWidth $Param.VirtualDesktopWidth -NewHeight $Param.VirtualDesktopHeight                   
-                }
-                else
-                {                    
-                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                          
-                }
+                                   
+                $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                                          
             }
             catch 
             {               
@@ -1224,6 +1339,33 @@ $global:EgressEventScriptBlock = {
     }
 }
 
+function Get-WindowCaptionHeight
+{
+    $form = New-Object System.Windows.Forms.Form
+    try {
+        $screenRect = $form.RectangleToScreen($form.ClientRectangle)
+
+        return $screenRect.Top - $virtualDesktopSyncHash.VirtualDesktop.Form.Top
+    }
+    finally
+    {
+      if ($form)  
+      {
+          $form.Dispose()
+      }
+    }
+}
+
+function Get-LocalScreenWidth
+{
+    return [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Width
+}
+
+function Get-LocalScreenHeight
+{
+    return [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Height
+}
+
 function New-VirtualDesktopForm
 {
     <#
@@ -1350,7 +1492,7 @@ function Invoke-RemoteDesktopViewer
         .PARAMETER Password
             Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead)        
 
-        .PARAMETER TLSv1_3
+        .PARAMETER UseTLSv1_3
             Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
             Recommended if possible.
 
@@ -1364,6 +1506,20 @@ function Invoke-RemoteDesktopViewer
                 - "Send": Send local clipboard to remote peer.
                 - "Both": Clipboards are fully synchronized between Viewer and Server.
 
+        .PARAMETER ImageCompressionQuality
+            JPEG Compression level from 0 to 100
+                0 = Lowest quality.
+                100 = Highest quality.
+
+        .PARAMETER Resize
+            If this switch is present, remote desktop resize will be forced according ResizeRatio option value.
+
+        .PARAMETER ResizeRatio
+            Define the resize ratio to apply to remote desktop (30 to 99)
+
+        .PARAMETER AlwaysOnTop
+            If this switch is present, virtual desktop form will be above all other windows.
+
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
@@ -1372,14 +1528,27 @@ function Invoke-RemoteDesktopViewer
     #>
     param (        
         [string] $ServerAddress = "127.0.0.1",
+
+        [ValidateRange(0, 65535)]
         [int] $ServerPort = 2801,        
-        [switch] $TLSv1_3,
+
+        [switch] $UseTLSv1_3,
                            
         [SecureString] $SecurePassword,
         [String] $Password,                
 
         [switch] $DisableVerbosity,
-        [ClipboardMode] $Clipboard = [ClipboardMode]::Both
+        [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
+
+        [ValidateRange(0, 100)]
+        [int] $ImageCompressionQuality = 100,
+
+        [switch] $Resize,
+
+        [ValidateRange(30, 99)]
+        [int] $ResizeRatio = 90,
+
+        [switch] $AlwaysOnTop
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1397,9 +1566,7 @@ function Invoke-RemoteDesktopViewer
         else 
         {
             $VerbosePreference = "SilentlyContinue"
-        }
-
-        $VerbosePreference = "continue"
+        }       
 
         Write-Banner 
 
@@ -1419,12 +1586,31 @@ function Invoke-RemoteDesktopViewer
             Remove-Variable -Name "Password" -ErrorAction SilentlyContinue
         }
         
-        $session = [ViewerSession]::New($ServerAddress, $ServerPort, $SecurePassword, $TLSv1_3)
+        $session = [ViewerSession]::New(
+            $ServerAddress,
+            $ServerPort,
+            $SecurePassword,
+            $UseTLSv1_3,
+            $ImageCompressionQuality
+        )
         try
         {
+            if ($Resize)
+            {
+                $session.ResizeRatio = $ResizeRatio
+            }            
+
+            Write-Host "Start new remote desktop session..."
+
             $session.OpenSession()
 
-            Write-Verbose "Create WinForms Environment..."
+            $session.ConnectDesktopWorker()
+
+            $session.ConnectEventsWorker()
+
+            Write-Host "Session successfully established, start streaming..."
+
+            Write-Verbose "Create WinForms Environment..."            
 
             $virtualDesktopSyncHash = [HashTable]::Synchronized(@{
                 VirtualDesktop = New-VirtualDesktopForm
@@ -1433,74 +1619,24 @@ function Invoke-RemoteDesktopViewer
             $virtualDesktopSyncHash.VirtualDesktop.Form.Text = [string]::Format(
                 "Power Remote Desktop v{0}: {1}/{2} - {3}", 
                 $global:PowerRemoteDesktopVersion,
-                $session.SessionInformation.Username,
-                $session.SessionInformation.MachineName,
-                $session.SessionInformation.WindowsVersion
+                $session.ServerInformation.Username,
+                $session.ServerInformation.MachineName,
+                $session.ServerInformation.WindowsVersion
             )
-
-            # Prepare Virtual Desktop 
-            $locationResolutionInformation = [System.Windows.Forms.Screen]::PrimaryScreen
-
-            $screenRect = $virtualDesktopSyncHash.VirtualDesktop.Form.RectangleToScreen($virtualDesktopSyncHash.VirtualDesktop.Form.ClientRectangle)
-            $captionHeight = $screenRect.Top - $virtualDesktopSyncHash.VirtualDesktop.Form.Top
-
-            $localScreenWidth = $locationResolutionInformation.WorkingArea.Width
-            $localScreenHeight = $locationResolutionInformation.WorkingArea.Height           
-            $localScreenHeight -= $captionHeight
-
-            $requireResize = (
-                ($localScreenWidth -le $session.SessionInformation.Screen.Width) -or
-                ($localScreenHeight -le $session.SessionInformation.Screen.Height)            
-            )
-
-            $virtualDesktopWidth = 0
-            $virtualDesktopHeight = 0
-
-            $resizeRatio = 80
-
-            if ($requireResize)
-            {            
-                $adjustVertically = $localScreenWidth -gt $localScreenHeight
-
-                if ($adjustVertically)
-                {
-                    $virtualDesktopWidth = [math]::Round(($localScreenWidth * $resizeRatio) / 100)
-                    
-                    $remoteResizedRatio = [math]::Round(($virtualDesktopWidth * 100) / $session.SessionInformation.Screen.Width)
-
-                    $virtualDesktopHeight = [math]::Round(($session.SessionInformation.Screen.Height * $remoteResizedRatio) / 100)
-                }
-                else
-                {
-                    $virtualDesktopHeight = [math]::Round(($localScreenHeight * $resizeRatio) / 100)
-                    
-                    $remoteResizedRatio = [math]::Round(($virtualDesktopHeight * 100) / $session.SessionInformation.Screen.Height)
-
-                    $virtualDesktopWidth = [math]::Round(($session.SessionInformation.Screen.Width * $remoteResizedRatio) / 100)
-                }                        
-            }
-            else
-            {            
-                $virtualDesktopWidth = $session.SessionInformation.Screen.Width
-                $virtualDesktopHeight = $session.SessionInformation.Screen.Height
-            }
 
             # Size Virtual Desktop Form Window
-            $virtualDesktopSyncHash.VirtualDesktop.Form.ClientSize = [System.Drawing.Size]::new($virtualDesktopWidth, $virtualDesktopHeight) 
+            $virtualDesktopSyncHash.VirtualDesktop.Form.ClientSize = [System.Drawing.Size]::New(
+                $session.ViewerConfiguration.VirtualDesktopWidth, 
+                $session.ViewerConfiguration.VirtualDesktopHeight
+            )                                   
 
-            # Center Virtual Desktop Form
-            $virtualDesktopSyncHash.VirtualDesktop.Form.Location = [System.Drawing.Point]::new(
-                (($localScreenWidth - $virtualDesktopSyncHash.VirtualDesktop.Form.Width) / 2),
-                (($localScreenHeight - $virtualDesktopSyncHash.VirtualDesktop.Form.Height) / 2)
-            )   
-            
             # Create a thread-safe hashtable to send events to remote server.            
             $outputEventSyncHash = [HashTable]::Synchronized(@{
                 Writer = $session.ClientEvents.Writer                
             })
 
             # WinForms Events (If enabled, I recommend to disable control when testing on local machine to avoid funny things)
-            if (-not $session.SessionInformation.ViewOnly)                   
+            if (-not $session.ServerInformation.ViewOnly)                   
             {
                 enum OutputEvent {
                     Keyboard = 0x1
@@ -1617,15 +1753,15 @@ function Invoke-RemoteDesktopViewer
 
                         [string] $Button = ""
                     )
-
-                    if ($requireResize)
+                    
+                    if ($session.ViewerConfiguration.RequireResize)
                     {
-                        $X = ($X * 100) / $resizeRatio
-                        $Y = ($Y * 100) / $resizeRatio
-                    }
+                        $X *= $session.ViewerConfiguration.ScreenX_Ratio
+                        $Y *= $session.ViewerConfiguration.ScreenY_Ratio
+                    }                    
       
-                    $X += $session.SessionInformation.Screen.X
-                    $Y += $session.SessionInformation.Screen.Y
+                    $X += $session.ViewerConfiguration.ScreenX_Delta
+                    $Y += $session.ViewerConfiguration.ScreenY_Delta
 
                     $aEvent = (New-MouseEvent -X $X -Y $Y -Button $Button -Type $Type)                    
 
@@ -1687,6 +1823,18 @@ function Invoke-RemoteDesktopViewer
 
                             Send-VirtualKeyboard -KeyChain $result                   
                         }
+                    }
+                )
+
+                $virtualDesktopSyncHash.VirtualDesktop.Form.Add_Shown(
+                    {
+                        # Center Virtual Desktop Form
+                        $virtualDesktopSyncHash.VirtualDesktop.Form.Location = [System.Drawing.Point]::New(
+                            ((Get-LocalScreenWidth) - $virtualDesktopSyncHash.VirtualDesktop.Form.Width) / 2,
+                            ((Get-LocalScreenHeight) - $virtualDesktopSyncHash.VirtualDesktop.Form.Height) / 2
+                        ) 
+
+                        $virtualDesktopSyncHash.VirtualDesktop.Form.TopMost = $AlwaysOnTop
                     }
                 )
 
@@ -1777,10 +1925,7 @@ function Invoke-RemoteDesktopViewer
 
             $param = New-Object -TypeName PSCustomObject -Property @{
                 Client = $session.ClientDesktop
-                VirtualDesktopSyncHash = $virtualDesktopSyncHash                            
-                VirtualDesktopWidth = $virtualDesktopWidth 
-                VirtualDesktopHeight = $virtualDesktopHeight
-                RequireResize = $requireResize          
+                VirtualDesktopSyncHash = $virtualDesktopSyncHash                                        
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  
@@ -1813,7 +1958,7 @@ function Invoke-RemoteDesktopViewer
             $null = $virtualDesktopSyncHash.VirtualDesktop.Form.ShowDialog()
         }
         finally
-        {    
+        {                
             Write-Verbose "Free environement."
 
             if ($session)
@@ -1836,7 +1981,9 @@ function Invoke-RemoteDesktopViewer
             if ($virtualDesktopSyncHash.VirtualDesktop)
             {            
                 $virtualDesktopSyncHash.VirtualDesktop.Form.Dispose()
-            }                                    
+            }      
+            
+            Write-Host "Remote desktop session has ended."
         }           
     }
     finally
