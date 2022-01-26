@@ -108,6 +108,32 @@ function Write-Banner
     Write-Host ""
 }
 
+function Get-PlainTextPassword
+{
+    <#
+        .SYNOPSIS
+            Retrieve the plain-text version of a secure string.
+
+        .PARAMETER SecurePassword
+            The SecureString object to be reversed.
+
+    #>
+    param(
+        [Parameter(Mandatory=$True)]
+        [SecureString] $SecurePassword
+    )
+
+    $BSTR = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecurePassword)
+    try
+    {        
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
+    }
+    finally
+    {
+        [Runtime.InteropServices.Marshal]::FreeBSTR($BSTR)
+    }
+}
+
 function Test-PasswordComplexity
 {
     <#
@@ -121,17 +147,17 @@ function Test-PasswordComplexity
                 * At least of lower case character.
                 * At least of upper case character. 
 
-        .PARAMETER PasswordCandidate
-            The Password to test.
+        .PARAMETER SecurePasswordCandidate
+            The password object to test
     #>
     param (
         [Parameter(Mandatory=$True)]
-        [string] $PasswordCandidate
+        [SecureString] $SecurePasswordCandidate
     )
 
     $complexityRules = "(?=^.{12,}$)(?=.*[!@#%^&*_]+)(?=.*[a-z])(?=.*[A-Z]).*$"
 
-    return ($PasswordCandidate -match $complexityRules)
+    return (Get-PlainTextPassword -SecurePassword $SecurePasswordCandidate) -match $complexityRules
 }
 
 function New-RandomPassword
@@ -147,11 +173,15 @@ function New-RandomPassword
     do
     {
         $authorizedChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#%^&*_"
+
         $candidate = -join ((1..18) | ForEach-Object { Get-Random -Input $authorizedChars.ToCharArray() })
 
-    } until (Test-PasswordComplexity -PasswordCandidate $candidate)
+        $secureCandidate = ConvertTo-SecureString -String $candidate -AsPlainText -Force        
+    } until (Test-PasswordComplexity -SecurePasswordCandidate $secureCandidate)
 
-    return $candidate
+    $candidate = $null
+
+    return $secureCandidate
 }
 
 function New-DefaultX509Certificate
@@ -558,13 +588,13 @@ function Resolve-AuthenticationChallenge
     #>
     param (        
        [Parameter(Mandatory=$True)]
-       [string] $Password, 
+       [SecureString] $SecurePassword, 
 
        [Parameter(Mandatory=$True)]
        [string] $Candidate
     )
 
-    $solution = -join($Candidate, ":", $Password)
+    $solution = -join($Candidate, ":", (Get-PlainTextPassword -SecurePassword $SecurePassword))
 
     for ([int] $i = 0; $i -le 1000; $i++)
     {
@@ -1386,7 +1416,7 @@ class ClientIO {
         Write-Verbose "Connection ready for use."  
     }
 
-    [bool] Authentify([string] $Password) {
+    [bool] Authentify([SecureString] $SecurePassword) {
         <#
             .SYNOPSIS
                 Handle authentication process with remote peer.
@@ -1399,7 +1429,7 @@ class ClientIO {
         #>        
         try
         { 
-            if (-not $Password) { 
+            if (-not $SecurePassword) { 
                 throw "During client authentication, a password cannot be blank."
             }
 
@@ -1408,7 +1438,7 @@ class ClientIO {
             $candidate = -join ((1..128) | ForEach-Object {Get-Random -input ([char[]](33..126))})
             $candidate = Get-SHA512FromString -String $candidate
 
-            $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -Password $Password   
+            $challengeSolution = Resolve-AuthenticationChallenge -Candidate $candidate -SecurePassword $SecurePassword   
 
             Write-Verbose "@Challenge:"
             Write-Verbose "Candidate: ""${candidate}"""
@@ -1591,7 +1621,7 @@ class ServerIO {
     }
 
     [ClientIO] PullClient(
-        [string] $Password,
+        [SecureString] $SecurePassword,
 
         [System.Security.Cryptography.X509Certificates.X509Certificate2]
         $Certificate,
@@ -1614,9 +1644,9 @@ class ServerIO {
                 Other method: AsyncWaitHandle.WaitOne([timespan])'h:m:s') -eq $true|$false with BeginAcceptTcpClient(...)
         #>
             
-        if (-not (Test-PasswordComplexity -PasswordCandidate $Password))
+        if (-not (Test-PasswordComplexity -SecurePasswordCandidate $SecurePassword))
         {
-            throw "Client socket pull request requires a complex password."
+            throw "Client socket pull request requires a complex password to be set."
         }
 
         if ($Timeout -gt 0)
@@ -1642,7 +1672,7 @@ class ServerIO {
         {            
             Write-Verbose "New client socket connected from: ""$($client.RemoteAddress())""."              
 
-            $authenticated = ($client.Authentify($Password) -eq 280121)
+            $authenticated = ($client.Authentify($SecurePassword) -eq 280121)
             if (-not $authenticated)
             {
                 throw "Access Denied."
@@ -1898,7 +1928,7 @@ class SessionManager {
     [System.Collections.Generic.List[ServerSession]]
     $Sessions = @()        
 
-    [string] $Password = ""    
+    [SecureString] $SecurePassword = $null 
 
     [System.Security.Cryptography.X509Certificates.X509Certificate2] 
     $Certificate = $null
@@ -1909,7 +1939,7 @@ class SessionManager {
     [ClipboardMode] $Clipboard = [ClipboardMode]::Both
 
     SessionManager(
-        [string] $Password,
+        [SecureString] $SecurePassword,
 
         [System.Security.Cryptography.X509Certificates.X509Certificate2] 
         $Certificate,
@@ -1921,12 +1951,7 @@ class SessionManager {
     {
         Write-Verbose "Initialize new session manager..."
 
-        if (-not (Test-PasswordComplexity -PasswordCandidate $Password))
-        {
-            throw "Session manager requires a complex password for viewer-authentication."
-        }
-
-        $this.Password = $Password        
+        $this.SecurePassword = $SecurePassword        
         $this.ViewOnly = $ViewOnly
         $this.UseTLSv13 = $UseTLSv13
         $this.Clipboard = $Clipboard
@@ -2196,7 +2221,7 @@ class SessionManager {
             try 
             {
                 $client = $this.Server.PullClient(
-                    $this.Password,
+                    $this.SecurePassword,
                     $this.Certificate,
                     $this.UseTLSv13,
                     5 * 1000
@@ -2315,9 +2340,14 @@ function Invoke-RemoteDesktopServer
         .PARAMETER ListenPort
             Define in which port to listen for new viewer.
 
+        .PARAMETER SecurePassword
+            SecureString Password object used by remote viewer to authenticate with server (Recommended)
+
+            Call "ConvertTo-SecureString -String "YouPasswordHere" -AsPlainText -Force" on this parameter to convert
+            a plain-text String to SecureString.
+
         .PARAMETER Password
-            Define password used during authentication process. 
-            (!) Absolutely use a complex password.
+            Plain-Text Password used by remote viewer to authenticate with server (Not recommended, use SecurePassword instead)
 
             If no password is specified, then a random complex password will be generated
             and printed on terminal.
@@ -2352,6 +2382,7 @@ function Invoke-RemoteDesktopServer
         [ValidateRange(0, 65535)]
         [int] $ListenPort = 2801,
 
+        [SecureString] $SecurePassword,
         [string] $Password = "",
 
         [string] $CertificateFile = "", # 1
@@ -2407,17 +2438,23 @@ function Invoke-RemoteDesktopServer
             }
         }
 
-        if (-not $Password)
+        # If plain-text password is set, we convert this password to a secured representation.
+        if ($Password -and -not $SecurePassword)
         {
-            $Password = New-RandomPassword
+            $SecurePassword = (ConvertTo-SecureString -String $Password -AsPlainText -Force)            
+        }
+
+        if (-not $SecurePassword)
+        {
+            $SecurePassword = New-RandomPassword
             
             Write-Host -NoNewLine "Server password: """
-            Write-Host -NoNewLine ${Password} -ForegroundColor green
-            Write-Host """."
-        }    
+            Write-Host -NoNewLine $(Get-PlainTextPassword -SecurePassword $SecurePassword) -ForegroundColor green
+            Write-Host """." 
+        } 
         else 
         {
-            if (-not (Test-PasswordComplexity -PasswordCandidate $Password))
+            if (-not (Test-PasswordComplexity -SecurePasswordCandidate $SecurePassword))
             {
                 throw "Password complexity is too weak. Please choose a password following following rules:`r`n`
                 * Minimum 12 Characters`r`n`
@@ -2425,12 +2462,14 @@ function Invoke-RemoteDesktopServer
                 * At least of lower case character`r`n`
                 * At least of upper case character`r`n"
             }
-        }            
+        }   
+        
+        Remove-Variable -Name "Password" -ErrorAction SilentlyContinue
 
         try
         {
             $sessionManager = [SessionManager]::New(
-                $Password,
+                $SecurePassword,
                 $Certificate,
                 $ViewOnly,
                 $UseTLSv1_3,
