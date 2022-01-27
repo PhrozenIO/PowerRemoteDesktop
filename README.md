@@ -51,7 +51,7 @@ If you are even more lazy and want to avoid using your own certificate, remove `
 ````powershell
 Install-Module -Name PowerRemoteDesktop_Viewer
 
-Invoke-RemoteDesktopServer -ServerAddress "<ip_address>" -Password "<the_one_displayed_on_server>"
+Invoke-RemoteDesktopViewer -ServerAddress "<ip_address>" -Password "<the_one_displayed_on_server>"
 ````
 
 Thats it 😉
