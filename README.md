@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assets/iconv2.png" width="384"/>
+  <img src="Assets/iconv2-1.png" width="384"/>
 </p>
 
 # Power Remote Desktop
