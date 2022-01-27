@@ -116,7 +116,7 @@ If you don't see them, run the following commands and check back.
 Import-Module PowerRemoteDesktop_Server
 
 Import-Module PowerRemoteDesktop_Viewer
- ```
+```
 
 ### Install as a PowerShell Module (Manually / Unmanaged)
 
