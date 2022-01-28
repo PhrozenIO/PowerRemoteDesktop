@@ -4,7 +4,7 @@
 
 # Power Remote Desktop
 
-<img src="Assets/demo.png" width="100%"/>
+<img src="Assets/prdp-banner.png" width="100%"/>
 
 *Power Remote Desktop* is a fully functional Remote Desktop Application entirely coded in PowerShell.
 
