@@ -1590,15 +1590,24 @@ class ClientIO {
     }
 }
 
+class TcpListenerEx : System.Net.Sockets.TcpListener
+{
+    TcpListenerEx([string] $ListenAddress, [int] $ListenPort) : base($ListenAddress, $ListenPort)
+    { }
+
+    [bool] Active()
+    {
+        return $this.Active     
+    }
+}
+
 class ServerIO {        
-    [System.Net.Sockets.TcpListener] $Server = $null    
+    [TcpListenerEx] $Server = $null    
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null    
 
     ServerIO() 
-    {
-        
-    }
+    { }
 
     [void] Listen(
         [string] $ListenAddress,
@@ -1610,7 +1619,7 @@ class ServerIO {
             $this.Close()            
         }        
 
-        $this.Server = New-Object System.Net.Sockets.TcpListener(
+        $this.Server = New-Object TcpListenerEx(
             $ListenAddress,
             $ListenPort
         )            
@@ -1692,9 +1701,10 @@ class ServerIO {
     {
         if ($this.Server)
         {
-            return $this.Server.Active
+            return $this.Server.Active()
         }
-        else {
+        else
+        {
             return $false
         }
     }
@@ -1706,10 +1716,10 @@ class ServerIO {
                 Stop listening and release TcpListener object.
         #>
         if ($this.Server)
-        {         
+        {                     
             if ($this.Server.Active)
-            {
-                $this.Server.Stop()
+            {                
+                $this.Server.Stop()                
             }
 
             $this.Server = $null
@@ -2207,8 +2217,8 @@ class SessionManager {
     [void] ListenForWorkers()
     {        
         while ($true)
-        {
-            if (-not $this.Server -or $this.Server.Active())
+        {            
+            if (-not $this.Server -or -not $this.Server.Active())
             {
                 throw "A server must be active to listen for new workers."
             }
@@ -2284,23 +2294,6 @@ class SessionManager {
         }
     }
 
-    [void] CloseServer()
-    {
-        <#
-            .SYNOPSIS
-                Close all existing sessions and dispose server.
-        #>
-
-        $this.CloseSessions()
-
-        if ($this.Server)
-        {
-            $this.Server.Close()
-
-            $this.Server = $null            
-        }
-    }
-
     [void] CloseSessions()
     {
         <#
@@ -2314,6 +2307,23 @@ class SessionManager {
         }
 
         $this.Sessions.Clear()
+    }
+
+    [void] CloseServer()
+    {
+        <#
+            .SYNOPSIS
+                Close all existing sessions and dispose server.
+        #>
+
+        $this.CloseSessions()
+
+        if ($this.Server)
+        {            
+            $this.Server.Close()
+
+            $this.Server = $null            
+        }
     }
 }
 
