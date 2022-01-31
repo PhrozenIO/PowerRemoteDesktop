@@ -1880,8 +1880,7 @@ function Invoke-RemoteDesktopViewer
                         }
                         
                         if ($result)
-                        {
-                            Write-Verbose $result
+                        {                            
                             Send-VirtualKeyboard -KeyChain $result
                         }
                     }
