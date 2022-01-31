@@ -51,6 +51,7 @@
 Add-Type -Assembly System.Windows.Forms
 Add-Type -Assembly System.Drawing
 Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();[DllImport("User32.dll")] public static extern int LoadCursorA(int hInstance, int lpCursorName);[DllImport("User32.dll")] public static extern bool GetCursorInfo(IntPtr pci);' -Name User32 -Namespace W;
+Add-Type -MemberDefinition '[DllImport("Kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);' -Name Kernel32 -Namespace W;
 
 $global:PowerRemoteDesktopVersion = "2.0.0"
 
@@ -81,6 +82,13 @@ enum WorkerKind {
     Events = 2
 }
 
+enum LogKind {
+    Information
+    Warning
+    Success
+    Error
+}
+
 function Write-Banner 
 {
     <#
@@ -106,6 +114,132 @@ function Write-Banner
     Write-Host "https://" -NoNewLine -ForegroundColor Green
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
+}
+
+function Write-Log
+{
+    <#
+        .SYNOPSIS
+            Output a log message to terminal with associated "icon".
+
+        .PARAMETER Message
+            Type: String
+            Default: None
+
+            Description: The message to write to terminal.
+
+        .PARAMETER LogKind
+            Type: LogKind Enum
+            Default: Information
+
+            Description: Define the logger "icon" kind.
+    #>
+    param(
+        [Parameter(Mandatory=$True)]
+        [string] $Message,
+
+        [LogKind] $LogKind = [LogKind]::Information
+    )
+
+    switch ($LogKind)
+    {    
+        ([LogKind]::Warning)
+        {
+            $icon = "!!"
+            $color = [System.ConsoleColor]::Yellow
+
+            break
+        }
+
+        ([LogKind]::Success)
+        {
+            $icon = "OK"
+            $color = [System.ConsoleColor]::Green
+
+            break
+        }
+
+        ([LogKind]::Error)
+        {
+            $icon = "KO"
+            $color = [System.ConsoleColor]::Red
+
+            break
+        }
+
+        default
+        {
+            $color = [System.ConsoleColor]::Cyan
+            $icon = "i"
+        }
+    }
+
+    Write-Host "[ " -NoNewLine    
+    Write-Host $icon -ForegroundColor $color -NoNewLine        
+    Write-Host " ] $Message"
+}
+
+function Write-OperationSuccessState
+{
+    param(
+        [Parameter(Mandatory=$True)]
+        $Result,
+        
+        [Parameter(Mandatory=$True)]
+        $Message
+    )
+
+    if ($Result)
+    {
+        $kind = [LogKind]::Success
+    }
+    else
+    {
+        $kind = [LogKind]::Error
+    }
+
+    Write-Log -Message $Message -LogKind $kind
+}
+
+function Invoke-PreventSleepMode
+{
+    <#
+        .SYNOPSIS
+            Prevent computer to enter sleep mode while server is running.
+
+        .DESCRIPTION
+            Function returns thread execution state old flags value. You can use this old flags
+            to restore thread execution to its original state.
+    #>
+
+    $ES_AWAYMODE_REQUIRED = [uint32]"0x00000040"
+    $ES_CONTINUOUS = [uint32]"0x80000000"
+    $ES_DISPLAY_REQUIRED = [uint32]"0x00000002"
+    $ES_SYSTEM_REQUIRED = [uint32]"0x00000001"
+    $ES_USER_PRESENT = [uint32]"0x00000004"
+
+    return [W.Kernel32]::SetThreadExecutionState(
+        $ES_CONTINUOUS -bor
+        $ES_SYSTEM_REQUIRED -bor
+        $ES_AWAYMODE_REQUIRED
+    )
+}
+
+function Update-ThreadExecutionState
+{
+    <#
+        .SYNOPSIS
+            Update current thread execution state flags.
+
+        .PARAMETER Flags
+            Execution state flags.
+    #>
+    param(
+        [Parameter(Mandatory=$True)]
+        $Flags    
+    )
+
+    return [W.Kernel32]::SetThreadExecutionState($Flags) -ne 0
 }
 
 function Get-PlainTextPassword
@@ -2393,6 +2527,12 @@ function Invoke-RemoteDesktopServer
         .PARAMETER ViewOnly (Default: None)
             If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. 
             Useful for view session only.
+
+        .PARAMETER PreventComputerToSleep
+            Type: Switch
+            Default: None
+            Description:             
+                If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections.            
     #>
 
     param (
@@ -2411,7 +2551,8 @@ function Invoke-RemoteDesktopServer
         [switch] $UseTLSv1_3,        
         [switch] $DisableVerbosity,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
-        [switch] $ViewOnly
+        [switch] $ViewOnly,
+        [switch] $PreventComputerToSleep
     )
 
     $oldErrorActionPreference = $ErrorActionPreference
@@ -2487,6 +2628,14 @@ function Invoke-RemoteDesktopServer
 
         try
         {
+            $oldExecutionStateFlags = $null            
+            if ($PreventComputerToSleep)
+            {
+                $oldExecutionStateFlags = Invoke-PreventSleepMode
+
+                Write-OperationSuccessState -Message "Preventing computer to entering sleep mode." -Result ($oldExecutionStateFlags -gt 0)
+            }
+
             Write-Host "Loading remote desktop server components..."
 
             $sessionManager = [SessionManager]::New(
@@ -2514,6 +2663,11 @@ function Invoke-RemoteDesktopServer
 
                 $sessionManager = $null
             }  
+
+            if ($oldExecutionStateFlags)
+            {
+                Write-OperationSuccessState -Message "Stop preventing computer to enter sleep mode. Restore thread execution state." -Result (Update-ThreadExecutionState -Flags $oldExecutionStateFlags)
+            }
 
             Write-Host "Remote desktop was closed."
         }                                                  

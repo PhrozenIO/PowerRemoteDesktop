@@ -306,18 +306,19 @@ Invoke-RemoteDesktopServer
 
 ##### ⚙️ Supported Options:
  
-| Parameter          | Type             | Default    | Description  |
-|--------------------|------------------|------------|--------------|
-| ServerAddress      | String           | 0.0.0.0    | IP Address that represents the local IP address |
-| ServerPort         | Integer          | 2801       | The port on which to listen for incoming connection |
-| SecurePassword     | SecureString     | None       | SecureString object containing password used to authenticate remote viewer (Recommended) |
-| Password           | String           | None       | Plain-Text Password used to authenticate remote viewer (Not recommended, use SecurePassword instead) |
-| DisableVerbosity   | Switch           | False      | If present, program wont show verbosity messages |
-| UseTLSv1_3         | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
-| Clipboard          | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
-| CertificateFile    | String           | None       | A file containing valid certificate information (x509), must include the **private key**  |
-| EncodedCertificate | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
-| ViewOnly           | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
+| Parameter              | Type             | Default    | Description  |
+|------------------------|------------------|------------|--------------|
+| ServerAddress          | String           | 0.0.0.0    | IP Address that represents the local IP address |
+| ServerPort             | Integer          | 2801       | The port on which to listen for incoming connection |
+| SecurePassword         | SecureString     | None       | SecureString object containing password used to authenticate remote viewer (Recommended) |
+| Password               | String           | None       | Plain-Text Password used to authenticate remote viewer (Not recommended, use SecurePassword instead) |
+| DisableVerbosity       | Switch           | False      | If present, program wont show verbosity messages |
+| UseTLSv1_3             | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
+| Clipboard              | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
+| CertificateFile        | String           | None       | A file containing valid certificate information (x509), must include the **private key**  |
+| EncodedCertificate     | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
+| ViewOnly               | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
+| PreventComputerToSleep | Switch           | None       | If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections. |
 
 ##### Server Address Examples
 
