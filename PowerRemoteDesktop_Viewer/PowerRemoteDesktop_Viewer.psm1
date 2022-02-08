@@ -49,9 +49,19 @@
 -------------------------------------------------------------------------------#>
 
 Add-Type -Assembly System.Windows.Forms
-Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "2.0.0"
+Add-Type @"
+    using System;    
+    using System.Runtime.InteropServices;
+
+    public static class User32 
+    {
+        [DllImport("User32.dll")] 
+        public static extern bool SetProcessDPIAware();    
+    }    
+"@
+
+$global:PowerRemoteDesktopVersion = "3.0.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -85,6 +95,25 @@ enum ProtocolCommand {
 enum WorkerKind {
     Desktop = 1
     Events = 2
+}
+
+enum BlockSize {
+    Size32 = 32
+    Size64 = 64
+    Size96 = 96
+    Size128 = 128
+    Size256 = 256
+    Size512 = 512
+}
+
+enum PacketSize {
+    Size1024 = 1024
+    Size2048 = 2048
+    Size4096 = 4096
+    Size8192 = 8192
+    Size9216 = 9216
+    Size12288 = 12288
+    Size16384 = 16384
 }
 
 function Write-Banner 
@@ -718,6 +747,9 @@ class ViewerSession
     [bool] $UseTLSv1_3 = $false       
     [int] $ImageCompressionQuality = 100 
     [int] $ResizeRatio = 0
+    [PacketSize] $PacketSize = [PacketSize]::Size9216
+    [BlockSize] $BlockSize = [BlockSize]::Size64
+    [bool] $HighQualityResize = $false
 
     [ClientIO] $ClientDesktop = $null
     [ClientIO] $ClientEvents = $null
@@ -725,9 +757,7 @@ class ViewerSession
     ViewerSession(        
         [string] $ServerAddress,
         [int] $ServerPort,
-        [SecureString] $SecurePassword,
-        [bool] $UseTLSv1_3,
-        [int] $ImageCompressionQuality
+        [SecureString] $SecurePassword        
     )    
     {                    
         # Or: System.Management.Automation.Runspaces.MaxPort (High(Word))
@@ -739,8 +769,6 @@ class ViewerSession
         $this.ServerAddress = $ServerAddress
         $this.ServerPort = $ServerPort 
         $this.SecurePassword = $SecurePassword
-        $this.UseTLSv1_3 = $UseTLSv1_3           
-        $this.ImageCompressionQuality = $ImageCompressionQuality
     }
 
     [void] OpenSession() {
@@ -918,7 +946,10 @@ class ViewerSession
 
             $viewerExpectation = New-Object PSCustomObject -Property @{    
                 ScreenName = $selectedScreen.Name 
-                ImageCompressionQuality = $this.ImageCompressionQuality            
+                ImageCompressionQuality = $this.ImageCompressionQuality
+                PacketSize = $this.PacketSize
+                BlockSize = $this.BlockSize
+                HighQualityResize = $this.HighQualityResize           
             }
 
             if ($this.ViewerConfiguration.RequireResize)
@@ -1073,23 +1104,25 @@ $global:VirtualDesktopUpdaterScriptBlock = {
     try
     {       
         $packetSize = 9216 # 9KiB        
-        
-        while ($true)
-        {                  
-            $stream = New-Object System.IO.MemoryStream
-            try
-            {                            
-                $buffer = New-Object -TypeName byte[] -ArgumentList 4 # SizeOf(Int32)                
 
-                $Param.Client.SSLStream.Read($buffer, 0, $buffer.Length)    
-                            
-                [int32] $totalBufferSize = [BitConverter]::ToInt32($buffer, 0)                                
+        # SizeOf(DWORD) * 3 (SizeOf(Desktop) + SizeOf(Left) + SizeOf(Top))
+        $struct = New-Object -TypeName byte[] -ArgumentList (([Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])) * 3)
+            
+        $stream = New-Object System.IO.MemoryStream
+
+        while ($true)
+        {                              
+            try
+            {             
+                $null = $Param.Client.SSLStream.Read($struct, 0, $struct.Length)  
+
+                $totalBufferSize = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x0)
+                $rectLeft = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x4)
+                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)                
 
                 $stream.SetLength($totalBufferSize)
 
-                $stream.position = 0              
-
-                $buffer = New-Object -TypeName Byte[] -ArgumentList $packetSize
+                $stream.Position = 0  
                 do
                 {
                     $bufferSize = $stream.Length - $stream.Position
@@ -1102,22 +1135,46 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 } until ($stream.Position -eq $stream.Length)                 
 
                 $stream.Position = 0                                                                
-                                   
-                $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = [System.Drawing.Image]::FromStream($stream)                                                                          
+                   
+                if (-not $scene)
+                {
+                    $scene = [System.Drawing.Bitmap]::New($stream)
+                    $graphics = [System.Drawing.Graphics]::FromImage($scene)
+                } 
+                else
+                {
+                    $bitmap = [System.Drawing.Bitmap]::New($stream)
+
+                    $graphics.DrawImage(
+                        $bitmap,
+                        [System.Drawing.Point]::New(
+                            $rectLeft,
+                            $rectTop
+                        )
+                    )
+                }       
+
+                $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene                
             }
             catch 
-            {               
+            {                  
                 break
-            }            
-            finally
-            {
-                $stream.Close()
-            }                    
+            }                              
         }
 
     }
     finally
     {        
+        if ($scene)
+        {
+            $scene.Dispose()
+        }
+
+        if ($stream)
+        {
+            $stream.Close()
+        }
+
         $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.Close()
     }
 }
@@ -1520,6 +1577,29 @@ function Invoke-RemoteDesktopViewer
         .PARAMETER AlwaysOnTop
             If this switch is present, virtual desktop form will be above all other windows.
 
+        .PARAMETER BlockSize
+            Type: Enum
+            Values: Size32, Size64, Size96, Size128, Size256, Size512
+            Default: Size64
+            Description:
+                (Advanced) Define the screen grid block size. 
+                Choose the block size accordingly to remote screen size / computer constrainsts (CPU / Network)
+
+        .PARAMETER PacketSize
+            Type: Enum
+            Values: Size1024, Size2048, Size4096, Size8192, Size9216, Size12288, Size16384 
+            Default: Size9216
+            Description:
+                (Advanced) Define the network packet size for streams.
+                Choose the packet size accordingly to your network constrainsts.
+
+        .PARAMETER HighQualityResize
+            Type: Switch
+            Default: None
+            Description:
+                Control the quality of remote desktop resize (smoothing) if applicable.
+                If you lack of network speed, this option is not recommended.
+
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
@@ -1548,7 +1628,10 @@ function Invoke-RemoteDesktopViewer
         [ValidateRange(30, 99)]
         [int] $ResizeRatio = 90,
 
-        [switch] $AlwaysOnTop
+        [switch] $AlwaysOnTop,
+        [PacketSize] $PacketSize = [PacketSize]::Size9216,
+        [BlockSize] $BlockSize = [BlockSize]::Size64,
+        [switch] $HighQualityResize = $false
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1570,7 +1653,7 @@ function Invoke-RemoteDesktopViewer
 
         Write-Banner 
 
-        $null = [W.User32]::SetProcessDPIAware()
+        $null = [User32]::SetProcessDPIAware()
                 
         Write-Verbose "Server address: ""${ServerAddress}:${ServerPort}"""
 
@@ -1589,12 +1672,16 @@ function Invoke-RemoteDesktopViewer
         $session = [ViewerSession]::New(
             $ServerAddress,
             $ServerPort,
-            $SecurePassword,
-            $UseTLSv1_3,
-            $ImageCompressionQuality
+            $SecurePassword            
         )
         try
         {
+            $session.UseTLSv1_3 = $UseTLSv1_3
+            $session.ImageCompressionQuality = $ImageCompressionQuality
+            $session.PacketSize = $PacketSize
+            $session.BlockSize = $BlockSize
+            $session.HighQualityResize = $HighQualityResize
+
             if ($Resize)
             {
                 $session.ResizeRatio = $ResizeRatio
