@@ -78,7 +78,7 @@ Add-Type @"
         [DllImport("Kernel32.dll")] 
         public static extern uint SetThreadExecutionState(uint esFlags);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint="RtlMoveMemory")]
         public static extern void CopyMemory(
             IntPtr dest,
             IntPtr src,
