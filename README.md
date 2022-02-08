@@ -19,6 +19,14 @@ Tested on:
 
 Current version: **3.0 Stable**
 
+## Performance
+
+<p align="center">
+  <img src="Assets/ps7.png" width="64"/>
+</p>
+
+If you want to enhance your experience, I really recommend you to install (if not already) and use PowerShell instead of PowerShell 5.
+
 ---
 
 ## Highlighted Features
