@@ -1121,7 +1121,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                 $totalBufferSize = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x0)
                 $rectLeft = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x4)
-                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)              
+                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)               
 
                 $stream.SetLength($totalBufferSize)
 
@@ -1139,6 +1139,11 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                 $stream.Position = 0                                                                
                    
+                if ($stream.Length -eq 0)
+                {
+                    continue
+                }
+                
                 if (-not $scene)
                 {
                     # First Iteration                
@@ -1148,7 +1153,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                     $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene
                 } 
                 else
-                {
+                {                    
                     # Next Iterations
                     $sceneChunk = [System.Drawing.Image]::FromStream($stream)                    
                     
@@ -1166,7 +1171,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 }                                    
             }
             catch 
-            {                  
+            {              
                 break
             }                              
         }

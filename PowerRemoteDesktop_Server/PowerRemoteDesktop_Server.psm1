@@ -920,15 +920,22 @@ $global:DesktopStreamScriptBlock = {
             }
 
             if ($ResizeDesktop)
-            {                                
-                $fullSizeDesktopGraphics.CopyFromScreen(
-                    $screen.Bounds.Location,
-                    [System.Drawing.Point]::Empty,
-                    [System.Drawing.Size]::New(
-                        $fullSizeDesktop.Width,
-                        $fullSizeDesktop.Height
+            {                  
+                try
+                {              
+                    $fullSizeDesktopGraphics.CopyFromScreen(
+                        $screen.Bounds.Location,
+                        [System.Drawing.Point]::Empty,
+                        [System.Drawing.Size]::New(
+                            $fullSizeDesktop.Width,
+                            $fullSizeDesktop.Height
+                        )
                     )
-                )
+                }
+                catch
+                {
+                    continue
+                }
 
                 $graphics.DrawImage(
                     $fullSizeDesktop,
@@ -940,14 +947,21 @@ $global:DesktopStreamScriptBlock = {
             }
             else
             {
-                $graphics.CopyFromScreen(
-                    [System.Drawing.Point]::Empty,
-                    [System.Drawing.Point]::Empty,
-                    [System.Drawing.Size]::New(
-                        $virtualScreenBounds.Width,
-                        $virtualScreenBounds.Height
+                try
+                {
+                    $graphics.CopyFromScreen(
+                        [System.Drawing.Point]::Empty,
+                        [System.Drawing.Point]::Empty,
+                        [System.Drawing.Size]::New(
+                            $virtualScreenBounds.Width,
+                            $virtualScreenBounds.Height
+                        )
                     )
-                )
+                }
+                catch
+                {
+                    continue
+                }
             }            
 
             for ($y = 0; $y -lt $vertBlockCount; $y++)    
@@ -1042,7 +1056,7 @@ $global:DesktopStreamScriptBlock = {
                 
                     $desktopStream = New-Object System.IO.MemoryStream
 
-                    $updatedDesktop.Save($desktopStream, $encoder, $encoderParameters)                        
+                    $updatedDesktop.Save($desktopStream, $encoder, $encoderParameters)                                 
 
                     $desktopStream.Position = 0
                     try 
@@ -1067,7 +1081,7 @@ $global:DesktopStreamScriptBlock = {
                         } until ($desktopStream.Position -eq $desktopStream.Length)
                     }
                     catch
-                    { 
+                    {                         
                         break 
                     }
                 }
