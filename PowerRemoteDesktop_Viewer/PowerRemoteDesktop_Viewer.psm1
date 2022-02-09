@@ -19,16 +19,6 @@
         Version 2.0, January 2004
         http://www.apache.org/licenses/
 
-    .Why
-        - Prove PowerShell is as "PowerFul" as compiled language.
-        - Improve my PowerShell skills.
-        - Because Remote Desktop Powershell Scripts doesn't exists so far.        
-
-    .Important
-        This PowerShell Application is not yet marked as Stable / Final. It is not recommended to use
-        it in a production environment at this time.
-        Wait for final 1.0 version.
-
     .Disclaimer
         We are doing our best to prepare the content of this app. However, PHROZEN SASU and / or
         Jean-Pierre LESUEUR cannot warranty the expressions and suggestions of the contents,
@@ -1143,7 +1133,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 {
                     continue
                 }
-                
+
                 if (-not $scene)
                 {
                     # First Iteration                
