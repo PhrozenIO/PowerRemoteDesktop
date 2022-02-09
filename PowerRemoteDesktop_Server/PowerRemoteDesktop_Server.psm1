@@ -67,10 +67,10 @@ Add-Type @"
         public static extern bool GetCursorInfo(IntPtr pci);
 
         [DllImport("user32.dll")] 
-        public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);
-        
-        [DllImport("user32.dll")] 
-        public static extern bool SetCursorPos(int X, int Y);
+        public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);            
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int nIndex);
     }    
 
     public static class Kernel32
@@ -1164,7 +1164,30 @@ $global:IngressEventScriptBlock = {
         Receive = 2
         Send = 3
         Both = 4
-    }    
+    }  
+    
+    $SM_CXSCREEN = 0
+    $SM_CYSCREEN = 1
+
+    function Set-MouseCursorPos
+    {
+        param(
+            [int] $X = 0,
+            [int] $Y = 0
+        )
+
+        $x_screen = [User32]::GetSystemMetrics($SM_CXSCREEN)
+        $y_screen = [User32]::GetSystemMetrics($SM_CYSCREEN)
+
+        [User32]::mouse_event(
+            [int][MouseFlags]::MOUSEEVENTF_MOVE -bor [int][MouseFlags]::MOUSEEVENTF_ABSOLUTE,
+            (65535 * $X) / $x_screen,
+            (65535 * $Y) / $y_screen,
+            0,
+            0
+        );
+            
+    }
 
     while ($Param.SafeHash.SessionActive)                    
     {             
@@ -1200,7 +1223,7 @@ $global:IngressEventScriptBlock = {
                 { break }
 
                 [System.Windows.Forms.SendKeys]::SendWait($aEvent.Keys)  
-                                           
+
                 break  
             }
 
@@ -1218,7 +1241,8 @@ $global:IngressEventScriptBlock = {
                     # Mouse Down/Up
                     {($_ -eq ([MouseState]::Down)) -or ($_ -eq ([MouseState]::Up))}
                     {
-                        [User32]::SetCursorPos($aEvent.X, $aEvent.Y)   
+                        #[User32]::SetCursorPos($aEvent.X, $aEvent.Y)   
+                        Set-MouseCursorPos -X $aEvent.X -Y $aEvent.Y
 
                         $down = ($_ -eq ([MouseState]::Down))
 
@@ -1267,7 +1291,8 @@ $global:IngressEventScriptBlock = {
                         if ($Param.ViewOnly)              
                         { continue }
 
-                        [User32]::SetCursorPos($aEvent.X, $aEvent.Y)
+                        #[User32]::SetCursorPos($aEvent.X, $aEvent.Y)
+                        Set-MouseCursorPos -X $aEvent.X -Y $aEvent.Y
 
                         break
                     }                    
