@@ -490,10 +490,12 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 
 https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8b5e-a96f44499013.mp4
 
-### 8 February 2022 (3.0.0)
+### 9 February 2022 (3.0.0)
 
 * Prevent computer to sleep in server side.
 * Motion Update now supported in its very first version to increase desktop streaming speed.
+* Mouse move works as expected in certain circumstances.
+* Keyboard simulation improved.
 * Various Optimization and fixes.
 
 ### List of ideas and TODO
@@ -501,6 +503,9 @@ https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8
 * 🟢 Support Password Protected external Certificates.
 * 🟢 Mutual Authentication for SSL/TLS (Client Certificate).                     
 * 🟠 Listen for local/remote screen resolution update event.
+* 🟠 Desktop Streaming Optimization.
+* 🟠 Mouse Move / Events Optimization.
+* 🔴 LogonUI Support.
 
 🟢 = Easy
 🟠 = Medium
