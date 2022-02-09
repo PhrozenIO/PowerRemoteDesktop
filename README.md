@@ -21,10 +21,6 @@ Current version: **3.0 Stable**
 
 ## Performance
 
-<p align="center">
-  <img src="Assets/ps7.png" width="64"/>
-</p>
-
 Enjoy better streaming performance and a better experience using **PowerShell 7** instead of **PowerShell 5**.
 
 You can install PowerShell 7 for Windows [here](https://docs.microsoft.com/fr-fr/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.2)
