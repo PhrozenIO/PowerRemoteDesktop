@@ -1121,9 +1121,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                 $totalBufferSize = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x0)
                 $rectLeft = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x4)
-                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)  
-                
-                $HostSyncHash.host.ui.WriteLine(($totalBufferSize / 1024))
+                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)              
 
                 $stream.SetLength($totalBufferSize)
 
