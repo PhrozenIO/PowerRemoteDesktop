@@ -1110,6 +1110,9 @@ $global:VirtualDesktopUpdaterScriptBlock = {
             
         $stream = New-Object System.IO.MemoryStream
 
+        $scene = $null
+        $sceneGraphics = $null
+
         while ($true)
         {                              
             try
@@ -1118,7 +1121,9 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
                 $totalBufferSize = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x0)
                 $rectLeft = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x4)
-                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)                
+                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)  
+                
+                $HostSyncHash.host.ui.WriteLine(($totalBufferSize / 1024))
 
                 $stream.SetLength($totalBufferSize)
 
@@ -1138,23 +1143,29 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                    
                 if (-not $scene)
                 {
-                    $scene = [System.Drawing.Bitmap]::New($stream)
-                    $graphics = [System.Drawing.Graphics]::FromImage($scene)
+                    # First Iteration                
+                    $scene = [System.Drawing.Image]::FromStream($stream)
+                    $sceneGraphics = [System.Drawing.Graphics]::FromImage($scene)
+
+                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene
                 } 
                 else
                 {
-                    $bitmap = [System.Drawing.Bitmap]::New($stream)
-
-                    $graphics.DrawImage(
-                        $bitmap,
+                    # Next Iterations
+                    $sceneChunk = [System.Drawing.Image]::FromStream($stream)                    
+                    
+                    $sceneGraphics.DrawImage(
+                        $sceneChunk,
                         [System.Drawing.Point]::New(
                             $rectLeft,
                             $rectTop
                         )
-                    )
-                }       
-
-                $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene                
+                    )                        
+                    
+                    $sceneChunk.Dispose()
+                    
+                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Invalidate()
+                }                                    
             }
             catch 
             {                  
@@ -1168,6 +1179,11 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         if ($scene)
         {
             $scene.Dispose()
+        }
+
+        if ($sceneGraphics)
+        {
+            $sceneGraphics.Dispose()
         }
 
         if ($stream)

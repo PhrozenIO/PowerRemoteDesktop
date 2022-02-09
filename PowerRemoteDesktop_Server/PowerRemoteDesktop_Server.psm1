@@ -49,10 +49,10 @@
 -------------------------------------------------------------------------------#>
 
 Add-Type -Assembly System.Windows.Forms
-Add-Type -Assembly System.Drawing
 
 Add-Type @"
     using System;    
+    using System.Security;
     using System.Runtime.InteropServices;
 
     public static class User32 
@@ -78,7 +78,7 @@ Add-Type @"
         [DllImport("Kernel32.dll")] 
         public static extern uint SetThreadExecutionState(uint esFlags);
 
-        [DllImport("kernel32.dll", SetLastError = true, EntryPoint="RtlMoveMemory")]
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint="RtlMoveMemory"), SuppressUnmanagedCodeSecurity]
         public static extern void CopyMemory(
             IntPtr dest,
             IntPtr src,
@@ -88,7 +88,7 @@ Add-Type @"
 
     public static class MSVCRT
     {
-        [DllImport("msvcrt.dll", CallingConvention=CallingConvention.Cdecl)]
+        [DllImport("msvcrt.dll", CallingConvention=CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
         public static extern int memcmp(IntPtr p1, IntPtr p2, UInt64 count);
     }
 "@
@@ -812,7 +812,7 @@ $global:DesktopStreamScriptBlock = {
         $HeightConstrainsts = $Param.SafeHash.ViewerConfiguration.ExpectDesktopHeight
     }
 
-    $bitmapPixelFormat = [System.Drawing.Imaging.PixelFormat]::Format24bppRgb    
+    $bitmapPixelFormat = [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb    
 
     $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { 
         $_.DeviceName -eq $Param.SafeHash.ViewerConfiguration.ScreenName 
@@ -1164,45 +1164,7 @@ $global:IngressEventScriptBlock = {
         Receive = 2
         Send = 3
         Both = 4
-    }
-
-    class KeyboardSim {
-        <#
-            .SYNOPSIS
-                Class to simulate Keyboard Events using a WScript.Shell
-                Instance.
-        #>
-        [System.__ComObject] $WShell = $null
-
-        KeyboardSim () 
-        <#
-            .SYNOPSIS
-                Class constructor
-        #>
-        {
-            $this.WShell = New-Object -ComObject WScript.Shell        
-        }
-
-        [void] SendInput([string] $String) 
-        {
-            <#
-                .SYNOPSIS
-                    Simulate Keyboard Strokes. It can contain a single char or a complex string.
-
-                .PARAMETER String
-                    Char or String to be simulated as pressed.
-
-                .EXAMPLE
-                    .SendInput("Hello, World")
-                    .SendInput("J")
-            #>        
-
-            # Simulate
-            $this.WShell.SendKeys($String)
-        }
-    }
-    
-    $keyboardSim = [KeyboardSim]::New()
+    }    
 
     while ($Param.SafeHash.SessionActive)                    
     {             
@@ -1237,7 +1199,8 @@ $global:IngressEventScriptBlock = {
                 if (-not ($aEvent.PSobject.Properties.name -match "Keys"))
                 { break }
 
-                $keyboardSim.SendInput($aEvent.Keys)                             
+                [System.Windows.Forms.SendKeys]::SendWait($aEvent.Keys)  
+                                           
                 break  
             }
 
