@@ -19,16 +19,6 @@
         Version 2.0, January 2004
         http://www.apache.org/licenses/
 
-    .Why
-        - Prove PowerShell is as "PowerFul" as compiled language.
-        - Improve my PowerShell skills.
-        - Because Remote Desktop Powershell Scripts doesn't exists so far.        
-
-    .Important
-        This PowerShell Application is not yet marked as Stable / Final. It is not recommended to use
-        it in a production environment at this time.
-        Wait for final 1.0 version.
-
     .Disclaimer
         We are doing our best to prepare the content of this app. However, PHROZEN SASU and / or
         Jean-Pierre LESUEUR cannot warranty the expressions and suggestions of the contents,
@@ -49,10 +39,51 @@
 -------------------------------------------------------------------------------#>
 
 Add-Type -Assembly System.Windows.Forms
-Add-Type -Assembly System.Drawing
-Add-Type -MemberDefinition '[DllImport("User32.dll")] public static extern bool SetProcessDPIAware();[DllImport("User32.dll")] public static extern int LoadCursorA(int hInstance, int lpCursorName);[DllImport("User32.dll")] public static extern bool GetCursorInfo(IntPtr pci);' -Name User32 -Namespace W;
 
-$global:PowerRemoteDesktopVersion = "2.0.0"
+Add-Type @"
+    using System;    
+    using System.Security;
+    using System.Runtime.InteropServices;
+
+    public static class User32 
+    {
+        [DllImport("User32.dll")] 
+        public static extern bool SetProcessDPIAware();    
+
+        [DllImport("User32.dll")] 
+        public static extern int LoadCursorA(int hInstance, int lpCursorName);
+
+        [DllImport("User32.dll")] 
+        public static extern bool GetCursorInfo(IntPtr pci);
+
+        [DllImport("user32.dll")] 
+        public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);            
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int nIndex);
+    }    
+
+    public static class Kernel32
+    {
+        [DllImport("Kernel32.dll")] 
+        public static extern uint SetThreadExecutionState(uint esFlags);
+
+        [DllImport("kernel32.dll", SetLastError = true, EntryPoint="RtlMoveMemory"), SuppressUnmanagedCodeSecurity]
+        public static extern void CopyMemory(
+            IntPtr dest,
+            IntPtr src,
+            uint count
+        );        
+    }
+
+    public static class MSVCRT
+    {
+        [DllImport("msvcrt.dll", CallingConvention=CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
+        public static extern int memcmp(IntPtr p1, IntPtr p2, UInt64 count);
+    }
+"@
+
+$global:PowerRemoteDesktopVersion = "3.0.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -81,6 +112,32 @@ enum WorkerKind {
     Events = 2
 }
 
+enum LogKind {
+    Information
+    Warning
+    Success
+    Error
+}
+
+enum BlockSize {
+    Size32 = 32
+    Size64 = 64
+    Size96 = 96
+    Size128 = 128
+    Size256 = 256
+    Size512 = 512
+}
+
+enum PacketSize {
+    Size1024 = 1024
+    Size2048 = 2048
+    Size4096 = 4096
+    Size8192 = 8192
+    Size9216 = 9216
+    Size12288 = 12288
+    Size16384 = 16384
+}
+
 function Write-Banner 
 {
     <#
@@ -106,6 +163,132 @@ function Write-Banner
     Write-Host "https://" -NoNewLine -ForegroundColor Green
     Write-Host "www.apache.org/licenses/"
     Write-Host ""
+}
+
+function Write-Log
+{
+    <#
+        .SYNOPSIS
+            Output a log message to terminal with associated "icon".
+
+        .PARAMETER Message
+            Type: String
+            Default: None
+
+            Description: The message to write to terminal.
+
+        .PARAMETER LogKind
+            Type: LogKind Enum
+            Default: Information
+
+            Description: Define the logger "icon" kind.
+    #>
+    param(
+        [Parameter(Mandatory=$True)]
+        [string] $Message,
+
+        [LogKind] $LogKind = [LogKind]::Information
+    )
+
+    switch ($LogKind)
+    {    
+        ([LogKind]::Warning)
+        {
+            $icon = "!!"
+            $color = [System.ConsoleColor]::Yellow
+
+            break
+        }
+
+        ([LogKind]::Success)
+        {
+            $icon = "OK"
+            $color = [System.ConsoleColor]::Green
+
+            break
+        }
+
+        ([LogKind]::Error)
+        {
+            $icon = "KO"
+            $color = [System.ConsoleColor]::Red
+
+            break
+        }
+
+        default
+        {
+            $color = [System.ConsoleColor]::Cyan
+            $icon = "i"
+        }
+    }
+
+    Write-Host "[ " -NoNewLine    
+    Write-Host $icon -ForegroundColor $color -NoNewLine        
+    Write-Host " ] $Message"
+}
+
+function Write-OperationSuccessState
+{
+    param(
+        [Parameter(Mandatory=$True)]
+        $Result,
+        
+        [Parameter(Mandatory=$True)]
+        $Message
+    )
+
+    if ($Result)
+    {
+        $kind = [LogKind]::Success
+    }
+    else
+    {
+        $kind = [LogKind]::Error
+    }
+
+    Write-Log -Message $Message -LogKind $kind
+}
+
+function Invoke-PreventSleepMode
+{
+    <#
+        .SYNOPSIS
+            Prevent computer to enter sleep mode while server is running.
+
+        .DESCRIPTION
+            Function returns thread execution state old flags value. You can use this old flags
+            to restore thread execution to its original state.
+    #>
+
+    $ES_AWAYMODE_REQUIRED = [uint32]"0x00000040"
+    $ES_CONTINUOUS = [uint32]"0x80000000"
+    $ES_DISPLAY_REQUIRED = [uint32]"0x00000002"
+    $ES_SYSTEM_REQUIRED = [uint32]"0x00000001"
+    $ES_USER_PRESENT = [uint32]"0x00000004"
+
+    return [Kernel32]::SetThreadExecutionState(
+        $ES_CONTINUOUS -bor
+        $ES_SYSTEM_REQUIRED -bor
+        $ES_AWAYMODE_REQUIRED
+    )
+}
+
+function Update-ThreadExecutionState
+{
+    <#
+        .SYNOPSIS
+            Update current thread execution state flags.
+
+        .PARAMETER Flags
+            Execution state flags.
+    #>
+    param(
+        [Parameter(Mandatory=$True)]
+        $Flags    
+    )
+
+    return [Kernel32]::SetThreadExecutionState($Flags) -ne 0
 }
 
 function Get-PlainTextPassword
@@ -604,156 +787,101 @@ function Resolve-AuthenticationChallenge
     return $solution
 }
 
-$global:DesktopStreamScriptBlock = {
+$global:DesktopStreamScriptBlock = { 
+    $BlockSize = [int]$Param.SafeHash.ViewerConfiguration.BlockSize
+    $HighQualityResize = $Param.SafeHash.ViewerConfiguration.HighQualityResize
+    $packetSize = [int]$Param.SafeHash.ViewerConfiguration.PacketSize  
 
-    function Invoke-SmoothResize
+    $WidthConstrainsts = 0
+    $HeightConstrainsts = 0
+    
+    $ResizeDesktop = $Param.SafeHash.ViewerConfiguration.ResizeDesktop()
+    if ($ResizeDesktop)
     {
-        <#
-            .SYNOPSIS
-                Output a resized version of input bitmap. The resize quality is quite fair.
-                
-            .PARAMETER OriginalImage
-                Input bitmap to resize.
-
-            .PARAMETER NewWidth
-                Define the width of new bitmap version.
-
-            .PARAMETER NewHeight
-                Define the height of new bitmap version.
-
-            .PARAMETER HighQuality
-                Activate high quality image resizing with a serious performance cost.
-
-            .EXAMPLE
-                Invoke-SmoothResize -OriginalImage $myImage -NewWidth 1920 -NewHeight 1024
-        #>
-        param (
-            [Parameter(Mandatory=$true)]
-            [System.Drawing.Bitmap] $OriginalImage,
-
-            [Parameter(Mandatory=$true)]
-            [int] $NewWidth,
-
-            [Parameter(Mandatory=$true)]
-            [int] $NewHeight,
-
-            [bool] $HighQuality = $false
-        )
-        try
-        {    
-            $bitmap = New-Object -TypeName System.Drawing.Bitmap -ArgumentList $NewWidth, $NewHeight
-
-            $resizedImage = [System.Drawing.Graphics]::FromImage($bitmap)
-
-            if ($HighQuality)
-            {
-                $resizedImage.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-                $resizedImage.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-                $resizedImage.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-                $resizedImage.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality 
-            }
-            
-            $resizedImage.DrawImage($OriginalImage, 0, 0, $bitmap.Width, $bitmap.Height)
-
-            return $bitmap
-        }
-        finally
-        {
-            if ($OriginalImage)
-            {
-                $OriginalImage.Dispose()
-            }
-
-            if ($resizedImage)
-            {
-                $resizedImage.Dispose()
-            }
-        }
+        $WidthConstrainsts = $Param.SafeHash.ViewerConfiguration.ExpectDesktopWidth
+        $HeightConstrainsts = $Param.SafeHash.ViewerConfiguration.ExpectDesktopHeight
     }
-    
-    function Get-DesktopImage {	
-        <#
-            .SYNOPSIS
-                Return a snapshot of primary screen desktop.
 
-            .PARAMETER Screen
-                Define target screen to capture (if multiple monitor exists).
-                Default is primary screen
-        #>
-        param (
-            [System.Windows.Forms.Screen] $Screen = $null
-        )
-        try 
-        {	
-            if (-not $Screen)
-            {
-                $Screen = [System.Windows.Forms.Screen]::PrimaryScreen
-            }            
-
-            $size = New-Object System.Drawing.Size(
-                $Screen.Bounds.Size.Width,
-                $Screen.Bounds.Size.Height
-            )
-
-            $location = New-Object System.Drawing.Point(
-                $Screen.Bounds.Location.X,
-                $Screen.Bounds.Location.Y
-            )
-
-            $bitmap = New-Object System.Drawing.Bitmap(
-                $size.Width,
-                $size.Height,
-                [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
-            )
-
-            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-                        
-            $graphics.CopyFromScreen($location, [System.Drawing.Point]::Empty, $size)
-                        
-            return $bitmap
-        }        
-        catch
-        {
-            if ($bitmap)
-            {
-                $bitmap.Dispose()
-            }
-        }
-        finally
-        {
-            if ($graphics)
-            {
-                $graphics.Dispose()
-            }
-        }
-    } 
-    
-    # Initialize locally desktop streaming configuration
-    # "SafeHash" is a synchronized object, we must avoid accessing this object regularly to improve performance.
-    $imageQuality = $Param.SafeHash.ViewerConfiguration.ImageCompressionQuality
+    $bitmapPixelFormat = [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb    
 
     $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { 
         $_.DeviceName -eq $Param.SafeHash.ViewerConfiguration.ScreenName 
-    }       
-
-    $requireResize = $Param.SafeHash.ViewerConfiguration.ResizeDesktop()
-    $resizeWidth = $Param.SafeHash.ViewerConfiguration.ExpectDesktopWidth
-    $resizeHeight = $Param.SafeHash.ViewerConfiguration.ExpectDesktopHeight
-    try
+    }
+    if (-not $screen)
     {
-        [System.IO.MemoryStream] $oldImageStream = New-Object System.IO.MemoryStream
+        $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+    }
 
-        $jpegEncoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' };
+    $virtualScreenBounds = [System.Drawing.Rectangle]::New(
+        0,
+        0,
+        $screen.Bounds.Width,
+        $screen.Bounds.Height
+    )
 
-        $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
-        $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, $imageQuality)
+    if ($ResizeDesktop)
+    {
+        $virtualScreenBounds.Width = $WidthConstrainsts
+        $virtualScreenBounds.Height = $HeightConstrainsts
+    }    
 
-        $packetSize = 9216 # 9KiB   
-            
-        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $SpaceGrid = $null
+    $horzBlockCount = [math]::ceiling($virtualScreenBounds.Width / $BlockSize)
+    $vertBlockCount = [math]::ceiling($virtualScreenBounds.Height / $BlockSize)         
+
+    $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
+    $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter(
+        [System.Drawing.Imaging.Encoder]::Quality,
+        $Param.SafeHash.ViewerConfiguration.ImageCompressionQuality
+    )
+
+    $encoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' };
+
+    $SpaceGrid = New-Object IntPtr[][] $vertBlockCount, $horzBlockCount    
+
+    $firstIteration = $true
+
+    $bmpBlock = New-Object System.Drawing.Bitmap(
+        $BlockSize,
+        $BlockSize,
+        $bitmapPixelFormat
+    ) 
+
+    $desktopImage = New-Object System.Drawing.Bitmap(
+        $virtualScreenBounds.Width,
+        $virtualScreenBounds.Height,
+        $bitmapPixelFormat
+    )   
+
+    if ($ResizeDesktop)
+    {
+        $fullSizeDesktop = New-Object System.Drawing.Bitmap(
+            $screen.Bounds.Width,
+            $screen.Bounds.Height,
+            $bitmapPixelFormat
+        )                   
+
+        $fullSizeDesktopGraphics = [System.Drawing.Graphics]::FromImage($fullSizeDesktop)
+
+        if ($HighQualityResize -and $ResizeDesktop)
+        {
+            $fullSizeDesktopGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+            $fullSizeDesktopGraphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            $fullSizeDesktopGraphics.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $fullSizeDesktopGraphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality     
+        }
+    }    
+
+    # SizeOf(DWORD) * 3 (SizeOf(Desktop) + SizeOf(Left) + SizeOf(Top))
+    $struct = New-Object -TypeName byte[] -ArgumentList (([Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])) * 3)
+
+    $graphics = [System.Drawing.Graphics]::FromImage($desktopImage)
+    try
+    {        
+        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()                
 
         while ($true)
-        {       
+        {      
             # Using a stopwatch instead of replacing main loop "while ($true)" by "while($this.SafeHash.SessionActive)"
             # sounds strange but this is done to avoid locking our SafeHash to regularly and loosing some
             # performance. If you think this is useless, just use while($this.SafeHash.SessionActive) in main
@@ -769,96 +897,243 @@ $global:DesktopStreamScriptBlock = {
 
                 $stopWatch.Restart()
             }
-            
-            try
-            {                                                           
-                $desktopImage = Get-DesktopImage -Screen $screen                    
-                if ($requireResize)
-                {                                            
-                    $desktopImage = Invoke-SmoothResize -OriginalImage $desktopImage -NewWidth $resizeWidth -NewHeight $resizeHeight
+
+            # ///
+
+            if ($firstIteration)
+            {
+                $updatedRect = $virtualScreenBounds              
+            }
+            else
+            {
+                $updatedRect = New-Object -TypeName System.Drawing.Rectangle -ArgumentList 0, 0, 0, 0
+            }
+
+            if ($ResizeDesktop)
+            {                  
+                try
+                {              
+                    $fullSizeDesktopGraphics.CopyFromScreen(
+                        $screen.Bounds.Location,
+                        [System.Drawing.Point]::Empty,
+                        [System.Drawing.Size]::New(
+                            $fullSizeDesktop.Width,
+                            $fullSizeDesktop.Height
+                        )
+                    )
+                }
+                catch
+                {
+                    continue
                 }
 
-                $imageStream = New-Object System.IO.MemoryStream
-
-                $desktopImage.Save($imageStream, $jpegEncoder, $encoderParameters)                             
-
-                $sendUpdate = $true
-
-                # Check both stream size.
-                $sendUpdate = ($oldImageStream.Length -ne $imageStream.Length)                
-
-                # If sizes are equal, compare both Fingerprint to confirm finding.
-                if (-not $sendUpdate)
-                {            
-                    $imageStream.position = 0
-                    $oldImageStream.position = 0  
-
-                    $md5_1 = (Get-FileHash -InputStream $imageStream -Algorithm MD5).Hash   
-                    $md5_2 = (Get-FileHash -InputStream $oldImageStream -Algorithm MD5).Hash                   
-
-                    $sendUpdate = ($md5_1 -ne $md5_2)                 
+                $graphics.DrawImage(
+                    $fullSizeDesktop,
+                    0,
+                    0,
+                    $virtualScreenBounds.Width,
+                    $virtualScreenBounds.Height
+                )
+            }
+            else
+            {
+                try
+                {
+                    $graphics.CopyFromScreen(
+                        $screen.Bounds.Location,
+                        [System.Drawing.Point]::Empty,
+                        [System.Drawing.Size]::New(
+                            $virtualScreenBounds.Width,
+                            $virtualScreenBounds.Height
+                        )
+                    )
                 }
+                catch
+                {
+                    continue
+                }
+            }            
 
-                if ($sendUpdate)
-                {                    
-                    $imageStream.position = 0 
+            for ($y = 0; $y -lt $vertBlockCount; $y++)    
+            {                             
+                for ($x = 0; $x -lt $horzBlockCount; $x++)
+                {                       
+                    $rect = New-Object -TypeName System.Drawing.Rectangle
+
+                    $rect.X = ($x * $BlockSize)
+                    $rect.Y = ($y * $BlockSize)
+                    $rect.Width = $BlockSize
+                    $rect.Height = $BlockSize
+
+                    $rect = [System.Drawing.Rectangle]::Intersect($rect, $virtualScreenBounds)   
+                        
+                    $bmpBlock = $desktopImage.Clone($rect, $bitmapPixelFormat)
+
+                    $bmpBlockData = $bmpBlock.LockBits(
+                        [System.Drawing.Rectangle]::New(0, 0, $bmpBlock.Width, $bmpBlock.Height), 
+                        [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+                        $bitmapPixelFormat
+                    )
+                    try
+                    {
+                        $blockMemSize = ($bmpBlockData.Stride * $bmpBlock.Height)
+                        if ($firstIteration)
+                        {
+                            # Big bang occurs, tangent univers is getting created, where is Donnie?
+                            $SpaceGrid[$y][$x] = [Runtime.InteropServices.Marshal]::AllocHGlobal($blockMemSize)
+                                                                                                    
+                            [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $blockMemSize)                        
+                        }
+                        else
+                        {                        
+                            if ([MSVCRT]::memcmp($bmpBlockData.Scan0, $SpaceGrid[$y][$x], $blockMemSize) -ne 0)
+                            {
+                                [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $blockMemSize) 
+
+                                if ($updatedRect.IsEmpty)
+                                {
+                                    $updatedRect.X = $x * $BlockSize
+                                    $updatedRect.Width = $BlockSize
+
+                                    $updatedRect.Y = $y * $BlockSize
+                                    $updatedRect.Height = $BlockSize                                    
+                                }
+                                else
+                                {    
+                                    if ($x * $BlockSize -lt $updatedRect.X)
+                                    {
+                                        $updatedRect.X = $x * $BlockSize
+                                    }
+
+                                    if (($x+1) * $BlockSize -gt $updatedRect.Right)
+                                    {
+                                        $updatedRect.Width = (($x + 1) * $BlockSize) - $updatedRect.X
+                                    }
+
+                                    if ($y * $BlockSize -lt $updatedRect.Y)
+                                    {
+                                        $updatedRect.Y = $y * $BlockSize
+                                    }
+
+                                    if (($y+1) * $BlockSize -gt $updatedRect.Bottom)
+                                    {
+                                        $updatedRect.Height = (($y + 1) * $BlockSize) - $updatedRect.Y
+                                    }
+                                }
+                            }                        
+                        }
+                    }
+                    finally
+                    {
+                        if ($bmpBlockData)
+                        {
+                            $bmpBlock.UnlockBits($bmpBlockData)
+                        }
+                    }                               
+                }                            
+            }          
+
+            if (-not $updatedRect.IsEmpty -and $desktopImage)
+            {                           
+                try
+                {
+                    $updatedRect = [System.Drawing.Rectangle]::Intersect($updatedRect, $virtualScreenBounds)
+
+                    $updatedDesktop = $desktopImage.Clone(
+                        $updatedRect,
+                        $bitmapPixelFormat
+                    )    
+                
+                    $desktopStream = New-Object System.IO.MemoryStream
+
+                    $updatedDesktop.Save($desktopStream, $encoder, $encoderParameters)                                 
+
+                    $desktopStream.Position = 0
                     try 
-                    {            
-                        $Param.Client.SSLStream.Write([BitConverter]::GetBytes([int32] $imageStream.Length) , 0, 4) # SizeOf(Int32)    
-                                        
-                        $binaryReader = New-Object System.IO.BinaryReader($imageStream)
+                    {         
+                        # One call please  
+                        [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x0, $desktopStream.Length)
+                        [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x4, $updatedRect.Left)
+                        [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x8, $updatedRect.Top)
+
+                        $Param.Client.SSLStream.Write($struct , 0, $struct.Length)   
+              
+                        $binaryReader = New-Object System.IO.BinaryReader($desktopStream)
                         do
                         {       
-                            $bufferSize = ($imageStream.Length - $imageStream.Position)
+                            $bufferSize = ($desktopStream.Length - $desktopStream.Position)
                             if ($bufferSize -gt $packetSize)
                             {
                                 $bufferSize = $packetSize
                             }                                                                      
 
                             $Param.Client.SSLStream.Write($binaryReader.ReadBytes($bufferSize), 0, $bufferSize)                              
-                        } until ($imageStream.Position -eq $imageStream.Length)
+                        } until ($desktopStream.Position -eq $desktopStream.Length)
                     }
                     catch
-                    { break }
-
-                    # Update Old Image Stream for Comparison
-                    $imageStream.position = 0 
-
-                    $oldImageStream.SetLength(0)
-
-                    $imageStream.CopyTo($oldImageStream)
+                    {                         
+                        break 
+                    }
                 }
-                else {}              
-            }    
-            catch 
-            { }
-            finally
+                finally
+                {
+                    if ($desktopStream)
+                    {
+                        $desktopStream.Dispose()
+                    }
+
+                    if ($updatedDesktop)
+                    {
+                        $updatedDesktop.Dispose()
+                    }
+                }
+            }
+
+            if ($firstIteration)
             {
-                if ($desktopImage)
-                {
-                    $desktopImage.Dispose()
-                }
-
-                if ($imageStream)
-                {
-                    $imageStream.Close()
-                }
+                $firstIteration = $false
             }
         }
     }
     finally
-    {
-        if ($oldImageStream)
+    {        
+        if ($graphics)
         {
-            $oldImageStream.Close()
+            $graphics.Dispose()
         }
-    }
+
+        if ($desktopImage)
+        {
+            $desktopImage.Dispose()
+        }
+
+        if ($fullSizeDesktopGraphics)
+        {
+            $fullSizeDesktopGraphics.Dispose()
+        }
+
+        if ($fullSizeDesktop)
+        {
+            $fullSizeDesktop.Dispose()
+        }        
+
+        if ($bmpBlock)
+        {
+            $bmpBlock.Dispose()
+        }
+
+        # Tangent univers big crunch
+        for ($y = 0; $y -lt $vertBlockCount; $y++)    
+        {                             
+            for ($x = 0; $x -lt $horzBlockCount; $x++)
+            {                          
+                [Runtime.InteropServices.Marshal]::FreeHGlobal($SpaceGrid[$y][$x])           
+            }
+        }
+    }  
 }
 
-$global:IngressEventScriptBlock = {   
-
-    Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);[DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);' -Name U32 -Namespace W;
-
+$global:IngressEventScriptBlock = {       
     enum MouseFlags {
         MOUSEEVENTF_ABSOLUTE = 0x8000
         MOUSEEVENTF_LEFTDOWN = 0x0002
@@ -893,45 +1168,30 @@ $global:IngressEventScriptBlock = {
         Receive = 2
         Send = 3
         Both = 4
-    }
-
-    class KeyboardSim {
-        <#
-            .SYNOPSIS
-                Class to simulate Keyboard Events using a WScript.Shell
-                Instance.
-        #>
-        [System.__ComObject] $WShell = $null
-
-        KeyboardSim () 
-        <#
-            .SYNOPSIS
-                Class constructor
-        #>
-        {
-            $this.WShell = New-Object -ComObject WScript.Shell        
-        }
-
-        [void] SendInput([string] $String) 
-        {
-            <#
-                .SYNOPSIS
-                    Simulate Keyboard Strokes. It can contain a single char or a complex string.
-
-                .PARAMETER String
-                    Char or String to be simulated as pressed.
-
-                .EXAMPLE
-                    .SendInput("Hello, World")
-                    .SendInput("J")
-            #>        
-
-            # Simulate
-            $this.WShell.SendKeys($String)
-        }
-    }
+    }  
     
-    $keyboardSim = [KeyboardSim]::New()
+    $SM_CXSCREEN = 0
+    $SM_CYSCREEN = 1
+
+    function Set-MouseCursorPos
+    {
+        param(
+            [int] $X = 0,
+            [int] $Y = 0
+        )
+
+        $x_screen = [User32]::GetSystemMetrics($SM_CXSCREEN)
+        $y_screen = [User32]::GetSystemMetrics($SM_CYSCREEN)
+
+        [User32]::mouse_event(
+            [int][MouseFlags]::MOUSEEVENTF_MOVE -bor [int][MouseFlags]::MOUSEEVENTF_ABSOLUTE,
+            (65535 * $X) / $x_screen,
+            (65535 * $Y) / $y_screen,
+            0,
+            0
+        );
+            
+    }
 
     while ($Param.SafeHash.SessionActive)                    
     {             
@@ -966,7 +1226,8 @@ $global:IngressEventScriptBlock = {
                 if (-not ($aEvent.PSobject.Properties.name -match "Keys"))
                 { break }
 
-                $keyboardSim.SendInput($aEvent.Keys)                             
+                [System.Windows.Forms.SendKeys]::SendWait($aEvent.Keys)  
+
                 break  
             }
 
@@ -984,7 +1245,8 @@ $global:IngressEventScriptBlock = {
                     # Mouse Down/Up
                     {($_ -eq ([MouseState]::Down)) -or ($_ -eq ([MouseState]::Up))}
                     {
-                        [W.U32]::SetCursorPos($aEvent.X, $aEvent.Y)   
+                        #[User32]::SetCursorPos($aEvent.X, $aEvent.Y)   
+                        Set-MouseCursorPos -X $aEvent.X -Y $aEvent.Y
 
                         $down = ($_ -eq ([MouseState]::Down))
 
@@ -1022,7 +1284,7 @@ $global:IngressEventScriptBlock = {
                                 }
                             }                            
                         }                     
-                        [W.U32]::mouse_event($mouseCode, 0, 0, 0, 0);
+                        [User32]::mouse_event($mouseCode, 0, 0, 0, 0);
 
                         break
                     }
@@ -1033,7 +1295,8 @@ $global:IngressEventScriptBlock = {
                         if ($Param.ViewOnly)              
                         { continue }
 
-                        [W.U32]::SetCursorPos($aEvent.X, $aEvent.Y)
+                        #[User32]::SetCursorPos($aEvent.X, $aEvent.Y)
+                        Set-MouseCursorPos -X $aEvent.X -Y $aEvent.Y
 
                         break
                     }                    
@@ -1047,7 +1310,7 @@ $global:IngressEventScriptBlock = {
                 if ($Param.ViewOnly)              
                 { continue }
 
-                [W.U32]::mouse_event([int][MouseFlags]::MOUSEEVENTF_WHEEL, 0, 0, $aEvent.Delta, 0);
+                [User32]::mouse_event([int][MouseFlags]::MOUSEEVENTF_WHEEL, 0, 0, $aEvent.Delta, 0);
 
                 break
             }    
@@ -1119,7 +1382,7 @@ $global:EgressEventScriptBlock = {
         $cursors = @{}
 
         foreach ($cursorType in [CursorType].GetEnumValues()) { 
-            $result = [W.User32]::LoadCursorA(0, [int]$cursorType)
+            $result = [User32]::LoadCursorA(0, [int]$cursorType)
 
             if ($result -gt 0)
             {
@@ -1165,7 +1428,7 @@ $global:EgressEventScriptBlock = {
 
             [System.Runtime.InteropServices.Marshal]::WriteInt32($cursorInfo, 0x0, $structSize)
 
-            if ([W.User32]::GetCursorInfo($cursorInfo))
+            if ([User32]::GetCursorInfo($cursorInfo))
             {
                 $hCursor = [System.Runtime.InteropServices.Marshal]::ReadInt64($cursorInfo, 0x8)
 
@@ -1590,15 +1853,24 @@ class ClientIO {
     }
 }
 
+class TcpListenerEx : System.Net.Sockets.TcpListener
+{
+    TcpListenerEx([string] $ListenAddress, [int] $ListenPort) : base($ListenAddress, $ListenPort)
+    { }
+
+    [bool] Active()
+    {
+        return $this.Active     
+    }
+}
+
 class ServerIO {        
-    [System.Net.Sockets.TcpListener] $Server = $null    
+    [TcpListenerEx] $Server = $null    
     [System.IO.StreamWriter] $Writer = $null
     [System.IO.StreamReader] $Reader = $null    
 
     ServerIO() 
-    {
-        
-    }
+    { }
 
     [void] Listen(
         [string] $ListenAddress,
@@ -1610,7 +1882,7 @@ class ServerIO {
             $this.Close()            
         }        
 
-        $this.Server = New-Object System.Net.Sockets.TcpListener(
+        $this.Server = New-Object TcpListenerEx(
             $ListenAddress,
             $ListenPort
         )            
@@ -1692,9 +1964,10 @@ class ServerIO {
     {
         if ($this.Server)
         {
-            return $this.Server.Active
+            return $this.Server.Active()
         }
-        else {
+        else
+        {
             return $false
         }
     }
@@ -1706,10 +1979,10 @@ class ServerIO {
                 Stop listening and release TcpListener object.
         #>
         if ($this.Server)
-        {         
+        {                     
             if ($this.Server.Active)
-            {
-                $this.Server.Stop()
+            {                
+                $this.Server.Stop()                
             }
 
             $this.Server = $null
@@ -1724,6 +1997,9 @@ class ViewerConfiguration {
     [int] $ExpectDesktopWidth = 0
     [int] $ExpectDesktopHeight = 0
     [int] $ImageCompressionQuality = 100    
+    [PacketSize] $PacketSize = [PacketSize]::Size9216
+    [BlockSize] $BlockSize = [BlockSize]::Size64
+    [bool] $HighQualityResize = $false 
 
     [bool] ResizeDesktop()
     {
@@ -2139,6 +2415,21 @@ class SessionManager {
                 $session.SafeHash.ViewerConfiguration.ImageCompressionQuality = $viewerExpectation.ImageCompressionQuality
             }
 
+            if ($viewerExpectation.PSobject.Properties.name -contains "PacketSize")
+            {
+                $session.SafeHash.ViewerConfiguration.PacketSize = [PacketSize]$viewerExpectation.PacketSize
+            }
+
+            if ($viewerExpectation.PSobject.Properties.name -contains "BlockSize")
+            {
+                $session.SafeHash.ViewerConfiguration.BlockSize = [BlockSize]$viewerExpectation.BlockSize
+            }
+
+            if ($viewerExpectation.PSobject.Properties.name -contains "HighQualityResize")
+            {
+                $session.SafeHash.ViewerConfiguration.HighQualityResize = $viewerExpectation.HighQualityResize
+            }
+
             Write-Verbose "New session successfully created."
 
             $this.Sessions.Add($session)    
@@ -2205,10 +2496,10 @@ class SessionManager {
     }
     
     [void] ListenForWorkers()
-    {        
+    {               
         while ($true)
-        {
-            if (-not $this.Server -or $this.Server.Active())
+        {          
+            if (-not $this.Server -or -not $this.Server.Active())
             {
                 throw "A server must be active to listen for new workers."
             }
@@ -2284,23 +2575,6 @@ class SessionManager {
         }
     }
 
-    [void] CloseServer()
-    {
-        <#
-            .SYNOPSIS
-                Close all existing sessions and dispose server.
-        #>
-
-        $this.CloseSessions()
-
-        if ($this.Server)
-        {
-            $this.Server.Close()
-
-            $this.Server = $null            
-        }
-    }
-
     [void] CloseSessions()
     {
         <#
@@ -2314,6 +2588,23 @@ class SessionManager {
         }
 
         $this.Sessions.Clear()
+    }
+
+    [void] CloseServer()
+    {
+        <#
+            .SYNOPSIS
+                Close all existing sessions and dispose server.
+        #>
+
+        $this.CloseSessions()
+
+        if ($this.Server)
+        {            
+            $this.Server.Close()
+
+            $this.Server = $null            
+        }
     }
 }
 
@@ -2383,6 +2674,12 @@ function Invoke-RemoteDesktopServer
         .PARAMETER ViewOnly (Default: None)
             If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. 
             Useful for view session only.
+
+        .PARAMETER PreventComputerToSleep
+            Type: Switch
+            Default: None
+            Description:             
+                If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections.            
     #>
 
     param (
@@ -2401,7 +2698,8 @@ function Invoke-RemoteDesktopServer
         [switch] $UseTLSv1_3,        
         [switch] $DisableVerbosity,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
-        [switch] $ViewOnly
+        [switch] $ViewOnly,
+        [switch] $PreventComputerToSleep
     )
 
     $oldErrorActionPreference = $ErrorActionPreference
@@ -2421,7 +2719,7 @@ function Invoke-RemoteDesktopServer
 
         Write-Banner    
 
-        $null = [W.User32]::SetProcessDPIAware()
+        $null = [User32]::SetProcessDPIAware()
 
         if (-not (Test-Administrator) -and -not $CertificateFile -and -not $EncodedCertificate)
         {
@@ -2477,6 +2775,14 @@ function Invoke-RemoteDesktopServer
 
         try
         {
+            $oldExecutionStateFlags = $null            
+            if ($PreventComputerToSleep)
+            {
+                $oldExecutionStateFlags = Invoke-PreventSleepMode
+
+                Write-OperationSuccessState -Message "Preventing computer to entering sleep mode." -Result ($oldExecutionStateFlags -gt 0)
+            }
+
             Write-Host "Loading remote desktop server components..."
 
             $sessionManager = [SessionManager]::New(
@@ -2504,6 +2810,11 @@ function Invoke-RemoteDesktopServer
 
                 $sessionManager = $null
             }  
+
+            if ($oldExecutionStateFlags)
+            {
+                Write-OperationSuccessState -Message "Stop preventing computer to enter sleep mode. Restore thread execution state." -Result (Update-ThreadExecutionState -Flags $oldExecutionStateFlags)
+            }
 
             Write-Host "Remote desktop was closed."
         }                                                  

@@ -14,10 +14,20 @@ This project demonstrate why PowerShell contains the word *Power*. It is unfortu
 
 Tested on:
 
-* **Windows 10** - PowerShell Version: 5.1.19041.1320
-* **Windows 11** - PowerShell Version: 5.1.22000.282
+* **Windows 10**
+* **Windows 11**
 
-Current version: **2.0 Stable**
+Current version: **3.0 Stable**
+
+## Performance
+
+<p align="center">
+  <img src="Assets/ps7.png" width="64"/>
+</p>
+
+Enjoy better streaming performance and a better experience using **PowerShell 7** instead of **PowerShell 5**.
+
+You can install PowerShell 7 for Windows [here](https://docs.microsoft.com/fr-fr/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.2)
 
 ---
 
@@ -35,6 +45,8 @@ https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b
 * Multi-Screen (Monitor) support. If remote computer have more than one desktop screen, you can choose which desktop screen to capture.
 * View Only mode for demonstration. You can disable remote control abilities and just show your screen to remote peer.
 * Session concurrency. Multiple viewers can connect to a single server at the same time.
+* Prevent computer to enter in sleep mode while server is waiting for viewers.
+* Only pieces of desktop that was updated are sent to viewer to increase streaming speed.
 
 ---
 
@@ -235,15 +247,41 @@ Create a new remote desktop session with a Power Remote Desktop Server.
 | Resize                  | Switch           | False      | If present, remote desktop will get resized accordingly with `ResizeRatio` option. |
 | ResizeRatio             | Integer (30-99)  | 90         | Used with `Resize` option, define the resize ratio in percentage. |
 | AlwaysOnTop             | Switch           | False      | If present, virtual desktop form will be above all other window's |
+| PacketSize              | Enum             | Size9216   | Define the network packet size for streams. Choose the packet size accordingly to your network constrainsts. |
+| BlockSize               | Enum             | Size64     | Define the screen grid block size. Choose the block size accordingly to remote screen size / computer constrainsts (CPU / Network) |
+| HighQualityResize       | Switch           | False      | Control the quality of remote desktop resize (smoothing) if applicable. If you lack of network speed, this option is not recommended. |
 
 ##### Clipboard Mode Enum Properties
 
+| Value             | Description                                        | 
+|-------------------|----------------------------------------------------|
+| Disabled          | Clipboard synchronization is disabled in both side |
+| Receive           | Only incomming clipboard is allowed                |
+| Send              | Only outgoing clipboard is allowed                 |
+| Both              | Clipboard synchronization is allowed on both side  |
+
+##### PacketSize Mode Enum Properties
+
+| Value             | Description         | 
+|-------------------|---------------------|
+| Size1024          | 1024 Bytes (1KiB)   |
+| Size2048          | 2048 Bytes (2KiB)   |
+| Size4096          | 4096 Bytes (4KiB)   |
+| Size8192          | 8192 Bytes (8KiB)   |
+| Size9216          | 9216 Bytes (9KiB)   |
+| Size12288         | 12288 Bytes (12KiB) |
+| Size16384         | 16384 Bytes (16KiB) |
+
+##### BlockSize Mode Enum Properties
+
 | Value             | Description      | 
 |-------------------|------------------|
-| Disabled          | Clipboard synchronization is disabled in both side |
-| Receive           | Only incomming clipboard is allowed |
-| Send              | Only outgoing clipboard is allowed |
-| Both              | Clipboard synchronization is allowed on both side |
+| Size32            | 32x32            |
+| Size64            | 64x64            |
+| Size96            | 96x96            |
+| Size128           | 128x128          |
+| Size256           | 256x256          |
+| Size512           | 512x512          |
 
 ##### ⚠️ Important Notices
 
@@ -306,34 +344,35 @@ Invoke-RemoteDesktopServer
 
 ##### ⚙️ Supported Options:
  
-| Parameter          | Type             | Default    | Description  |
-|--------------------|------------------|------------|--------------|
-| ServerAddress      | String           | 0.0.0.0    | IP Address that represents the local IP address |
-| ServerPort         | Integer          | 2801       | The port on which to listen for incoming connection |
-| SecurePassword     | SecureString     | None       | SecureString object containing password used to authenticate remote viewer (Recommended) |
-| Password           | String           | None       | Plain-Text Password used to authenticate remote viewer (Not recommended, use SecurePassword instead) |
-| DisableVerbosity   | Switch           | False      | If present, program wont show verbosity messages |
-| UseTLSv1_3         | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
-| Clipboard          | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
-| CertificateFile    | String           | None       | A file containing valid certificate information (x509), must include the **private key**  |
-| EncodedCertificate | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
-| ViewOnly           | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
+| Parameter              | Type             | Default    | Description  |
+|------------------------|------------------|------------|--------------|
+| ServerAddress          | String           | 0.0.0.0    | IP Address that represents the local IP address |
+| ServerPort             | Integer          | 2801       | The port on which to listen for incoming connection |
+| SecurePassword         | SecureString     | None       | SecureString object containing password used to authenticate remote viewer (Recommended) |
+| Password               | String           | None       | Plain-Text Password used to authenticate remote viewer (Not recommended, use SecurePassword instead) |
+| DisableVerbosity       | Switch           | False      | If present, program wont show verbosity messages |
+| UseTLSv1_3             | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
+| Clipboard              | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
+| CertificateFile        | String           | None       | A file containing valid certificate information (x509), must include the **private key**  |
+| EncodedCertificate     | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
+| ViewOnly               | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
+| PreventComputerToSleep | Switch           | None       | If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections. |
 
 ##### Server Address Examples
 
-| Value             | Description      | 
-|-------------------|------------------|
+| Value             | Description                                                              | 
+|-------------------|--------------------------------------------------------------------------|
 | 127.0.0.1         | Only listen for localhost connection (most likely for debugging purpose) |
-| 0.0.0.0           | Listen on all network interfaces (Local, LAN, WAN) |
+| 0.0.0.0           | Listen on all network interfaces (Local, LAN, WAN)                       |
 
 ##### Clipboard Mode Enum Properties
 
-| Value             | Description      | 
-|-------------------|------------------|
+| Value             | Description                                        | 
+|-------------------|----------------------------------------------------|
 | Disabled          | Clipboard synchronization is disabled in both side |
-| Receive           | Only incomming clipboard is allowed |
-| Send              | Only outgoing clipboard is allowed |
-| Both              | Clipboard synchronization is allowed on both side |
+| Receive           | Only incomming clipboard is allowed                |
+| Send              | Only outgoing clipboard is allowed                 |
+| Both              | Clipboard synchronization is allowed on both side  |
 
 ##### ⚠️ Important Notices
 
@@ -451,12 +490,22 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 
 https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8b5e-a96f44499013.mp4
 
+### 9 February 2022 (3.0.0)
+
+* Prevent computer to sleep in server side.
+* Motion Update now supported in its very first version to increase desktop streaming speed.
+* Mouse move works as expected in certain circumstances.
+* Keyboard simulation improved.
+* Various Optimization and fixes.
+
 ### List of ideas and TODO
 
 * 🟢 Support Password Protected external Certificates.
 * 🟢 Mutual Authentication for SSL/TLS (Client Certificate).                     
 * 🟠 Listen for local/remote screen resolution update event.
-* 🔴 Motion Update for Desktop Streaming (Only send and update changing parts of desktop).
+* 🟠 Desktop Streaming Optimization.
+* 🟠 Mouse Move / Events Optimization.
+* 🔴 LogonUI Support.
 
 🟢 = Easy
 🟠 = Medium
