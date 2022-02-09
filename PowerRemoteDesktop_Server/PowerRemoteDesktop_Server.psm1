@@ -940,7 +940,7 @@ $global:DesktopStreamScriptBlock = {
                 try
                 {
                     $graphics.CopyFromScreen(
-                        [System.Drawing.Point]::Empty,
+                        $screen.Bounds.Location,
                         [System.Drawing.Point]::Empty,
                         [System.Drawing.Size]::New(
                             $virtualScreenBounds.Width,
