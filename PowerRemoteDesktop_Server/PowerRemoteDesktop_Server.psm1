@@ -72,14 +72,14 @@ Add-Type @"
         public static extern void CopyMemory(
             IntPtr dest,
             IntPtr src,
-            uint count
+            IntPtr count
         );        
     }
 
     public static class MSVCRT
     {
         [DllImport("msvcrt.dll", CallingConvention=CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
-        public static extern int memcmp(IntPtr p1, IntPtr p2, UInt64 count);
+        public static extern IntPtr memcmp(IntPtr p1, IntPtr p2, IntPtr count);
     }
 "@
 
@@ -853,6 +853,9 @@ $global:DesktopStreamScriptBlock = {
         $bitmapPixelFormat
     )   
 
+    $graphics = [System.Drawing.Graphics]::FromImage($desktopImage)
+    $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+    
     if ($ResizeDesktop)
     {
         $fullSizeDesktop = New-Object System.Drawing.Bitmap(
@@ -861,65 +864,49 @@ $global:DesktopStreamScriptBlock = {
             $bitmapPixelFormat
         )                   
 
-        $fullSizeDesktopGraphics = [System.Drawing.Graphics]::FromImage($fullSizeDesktop)
+        $fullSizeDesktopGraphics = [System.Drawing.Graphics]::FromImage($fullSizeDesktop)              
 
         if ($HighQualityResize -and $ResizeDesktop)
-        {
-            $fullSizeDesktopGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $fullSizeDesktopGraphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-            $fullSizeDesktopGraphics.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $fullSizeDesktopGraphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality     
+        {            
+            $graphics.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic  
         }
-    }    
+        else 
+        {            
+            $graphics.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor                
+        }
+    }       
 
     # SizeOf(DWORD) * 3 (SizeOf(Desktop) + SizeOf(Left) + SizeOf(Top))
     $struct = New-Object -TypeName byte[] -ArgumentList (([Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])) * 3)
 
-    $graphics = [System.Drawing.Graphics]::FromImage($desktopImage)
+    $blockRect = New-Object -TypeName System.Drawing.Rectangle
+
+    $ptrBlockMemSize = $null    
     try
-    {        
-        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()                
-
-        while ($true)
+    {                    
+        while ($Param.SafeHash.SessionActive)
         {      
-            # Using a stopwatch instead of replacing main loop "while ($true)" by "while($this.SafeHash.SessionActive)"
-            # sounds strange but this is done to avoid locking our SafeHash to regularly and loosing some
-            # performance. If you think this is useless, just use while($this.SafeHash.SessionActive) in main
-            # loop instead of while($true).
-            if ($stopWatch.ElapsedMilliseconds -ge 2000)
-            {
-                if (-not $Param.SafeHash.SessionActive)
-                {
-                    $stopWatch.Stop()                   
-
-                    break
-                }
-
-                $stopWatch.Restart()
-            }
-
-            # ///
-
-            if ($firstIteration)
+             if ($firstIteration)
             {
                 $updatedRect = $virtualScreenBounds              
             }
             else
             {
-                $updatedRect = New-Object -TypeName System.Drawing.Rectangle -ArgumentList 0, 0, 0, 0
+                $updatedRect = [System.Drawing.Rectangle]::Empty
             }
 
             if ($ResizeDesktop)
             {                  
                 try
-                {              
+                {           
                     $fullSizeDesktopGraphics.CopyFromScreen(
                         $screen.Bounds.Location,
                         [System.Drawing.Point]::Empty,
                         [System.Drawing.Size]::New(
                             $fullSizeDesktop.Width,
                             $fullSizeDesktop.Height
-                        )
+                        ),
+                        [System.Drawing.CopyPixelOperation]::SourceCopy
                     )
                 }
                 catch
@@ -945,7 +932,8 @@ $global:DesktopStreamScriptBlock = {
                         [System.Drawing.Size]::New(
                             $virtualScreenBounds.Width,
                             $virtualScreenBounds.Height
-                        )
+                        ),
+                        [System.Drawing.CopyPixelOperation]::SourceCopy
                     )
                 }
                 catch
@@ -957,38 +945,48 @@ $global:DesktopStreamScriptBlock = {
             for ($y = 0; $y -lt $vertBlockCount; $y++)    
             {                             
                 for ($x = 0; $x -lt $horzBlockCount; $x++)
-                {                       
-                    $rect = New-Object -TypeName System.Drawing.Rectangle
+                {                                           
+                    $blockRect.X = ($x * $BlockSize)
+                    $blockRect.Y = ($y * $BlockSize)
+                    $blockRect.Width = $BlockSize
+                    $blockRect.Height = $BlockSize
 
-                    $rect.X = ($x * $BlockSize)
-                    $rect.Y = ($y * $BlockSize)
-                    $rect.Width = $BlockSize
-                    $rect.Height = $BlockSize
-
-                    $rect = [System.Drawing.Rectangle]::Intersect($rect, $virtualScreenBounds)   
+                    if (
+                        # Intersecting consume some time, only intersect if required.
+                        $blockRect.Right -gt $virtualScreenBounds.Width -or
+                        $blockRect.Bottom -gt $virtualScreenBounds.Height
+                    )
+                    {
+                        $blockRect.Intersect($virtualScreenBounds)   
+                    }
                         
-                    $bmpBlock = $desktopImage.Clone($rect, $bitmapPixelFormat)
+                    $bmpBlock = $desktopImage.Clone($blockRect, $bitmapPixelFormat)
+
+                    $blockRect.X = 0
+                    $blockRect.Y = 0
 
                     $bmpBlockData = $bmpBlock.LockBits(
-                        [System.Drawing.Rectangle]::New(0, 0, $bmpBlock.Width, $bmpBlock.Height), 
-                        [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+                        $blockRect, 
+                        [System.Drawing.Imaging.ImageLockMode]::WriteOnly,
                         $bitmapPixelFormat
                     )
                     try
                     {
                         $blockMemSize = ($bmpBlockData.Stride * $bmpBlock.Height)
+                        $ptrBlockMemSize = [IntPtr]::New($blockMemSize)
+
                         if ($firstIteration)
                         {
                             # Big bang occurs, tangent univers is getting created, where is Donnie?
                             $SpaceGrid[$y][$x] = [Runtime.InteropServices.Marshal]::AllocHGlobal($blockMemSize)
                                                                                                     
-                            [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $blockMemSize)                        
+                            [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $ptrBlockMemSize)                        
                         }
                         else
-                        {                        
-                            if ([MSVCRT]::memcmp($bmpBlockData.Scan0, $SpaceGrid[$y][$x], $blockMemSize) -ne 0)
+                        {                                                                        
+                            if ([MSVCRT]::memcmp($bmpBlockData.Scan0, $SpaceGrid[$y][$x], $ptrBlockMemSize) -ne [IntPtr]::Zero)
                             {
-                                [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $blockMemSize) 
+                                [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $ptrBlockMemSize) 
 
                                 if ($updatedRect.IsEmpty)
                                 {
@@ -1032,7 +1030,7 @@ $global:DesktopStreamScriptBlock = {
                     }                               
                 }                            
             }          
-
+            
             if (-not $updatedRect.IsEmpty -and $desktopImage)
             {                           
                 try
@@ -1133,7 +1131,7 @@ $global:DesktopStreamScriptBlock = {
     }  
 }
 
-$global:IngressEventScriptBlock = {       
+$global:IngressEventScriptBlock = {    
     enum MouseFlags {
         MOUSEEVENTF_ABSOLUTE = 0x8000
         MOUSEEVENTF_LEFTDOWN = 0x0002
@@ -1191,9 +1189,9 @@ $global:IngressEventScriptBlock = {
             0
         );
             
-    }
+    }    
 
-    while ($Param.SafeHash.SessionActive)                    
+    while ($true)                    
     {             
         try 
         {            
@@ -1499,7 +1497,7 @@ $global:EgressEventScriptBlock = {
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    while ($Param.SafeHash.SessionActive)
+    while ($true)
     {
         # Events that occurs every seconds needs to be placed bellow.
         # If no event has occured during this second we send a Keep-Alive signal to
@@ -1596,8 +1594,8 @@ function New-RunSpace
     )   
 
     $runspace = [RunspaceFactory]::CreateRunspace()
-    $runspace.ThreadOptions = "ReuseThread"
-    $runspace.ApartmentState = "STA"
+    $runspace.ThreadOptions = "UseNewThread"
+    $runspace.ApartmentState = "MTA"
     $runspace.Open()                   
 
     if ($Param)
@@ -2700,7 +2698,7 @@ function Invoke-RemoteDesktopServer
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
         [switch] $ViewOnly,
         [switch] $PreventComputerToSleep
-    )
+    )    
 
     $oldErrorActionPreference = $ErrorActionPreference
     $oldVerbosePreference = $VerbosePreference    

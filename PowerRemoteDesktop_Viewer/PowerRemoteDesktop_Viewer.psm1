@@ -1138,7 +1138,9 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 {
                     # First Iteration                
                     $scene = [System.Drawing.Image]::FromStream($stream)
+
                     $sceneGraphics = [System.Drawing.Graphics]::FromImage($scene)
+                    $sceneGraphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy  
 
                     $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene
                 } 
