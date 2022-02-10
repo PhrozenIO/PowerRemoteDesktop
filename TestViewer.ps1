@@ -23,7 +23,7 @@ Write-Host "7. Clipboard Disabled"
 Write-Host "8. Image Quality Really Bad"
 Write-Host "9. Image Quality Bad"
 Write-Host "10. Image Quality High"
-Write-Host "11. Resize 50% + Bad Resize Quality (FastResize)"
+Write-Host "11. Resize 10% + Bad Resize Quality (FastResize)"
 Write-Host "12. Resize 80%, Packet Size 16KiB, BlockSize 128x128"
 Write-Host "13. Bad Password"
 
@@ -97,10 +97,10 @@ switch ($scenario)
 
     11 
     { 
-        Write-Host "⚡Check if desktop image is reduced by 50%."
+        Write-Host "⚡Check if desktop image is reduced by 10%."
         Write-Host "⚡Check if resize quality is bad."
 
-        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 50 -FastResize
+        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 90 -FastResize
     }
 
     12 

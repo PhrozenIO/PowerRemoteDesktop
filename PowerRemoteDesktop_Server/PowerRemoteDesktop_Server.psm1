@@ -1624,7 +1624,7 @@ function New-RunSpace
 
     $runspace = [RunspaceFactory]::CreateRunspace()
     $runspace.ThreadOptions = "UseNewThread"
-    $runspace.ApartmentState = "MTA"
+    $runspace.ApartmentState = "STA"
     $runspace.Open()                   
 
     if ($Param)
