@@ -51,17 +51,15 @@ Add-Type @"
     }    
 "@
 
-$global:PowerRemoteDesktopVersion = "3.0.0"
+$global:PowerRemoteDesktopVersion = "3.1.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
     ClipboardText = (Get-Clipboard -Raw)
 })
 
-# Last until PowerShell session is closed
 $global:EphemeralTrustedServers = @()
 
-# Local storage definitions
 $global:LocalStoragePath = "HKCU:\SOFTWARE\PowerRemoteDesktop_Viewer"
 $global:LocalStoragePath_TrustedServers = -join($global:LocalStoragePath, "\TrustedServers")
 
@@ -207,7 +205,9 @@ function Write-ServerFingerprintToLocalStorage
             Write a trusted server certificate fingerprint to our local storage.
 
         .PARAMETER Fingerprint
-            The server certificate fingerprint to store.
+            Type: String
+            Default: None
+            Description: Fingerprint to store in local storage.
     #>
     param (
         [Parameter(Mandatory=$True)]
@@ -231,7 +231,9 @@ function Remove-TrustedServer
             Remove trusted server from local storage.
 
         .PARAMETER Fingerprint
-            Server certificate to remove from trusted server list.
+            Type: String
+            Default: None
+            Description: Fingerprint to remove from local storage.
     #>
     param (
         [Parameter(Mandatory=$True)]
@@ -312,7 +314,9 @@ function Test-ServerFingerprintFromLocalStorage
             Check if a server certificate fingerprint was saved to local storage.
 
         .PARAMETER Fingerprint
-            The server certificate fingerprint to check.
+            Type: String
+            Default: None
+            Description: Fingerprint to check in local storage.
     #>
     param (
         [Parameter(Mandatory=$True)]
@@ -329,7 +333,9 @@ function Get-SHA512FromString
             Return the SHA512 value from string.
 
         .PARAMETER String
-            A String to hash.
+            Type: String
+            Default : None
+            Description: A String to hash.
 
         .EXAMPLE
             Get-SHA512FromString -String "Hello, World"
@@ -349,16 +355,25 @@ function Resolve-AuthenticationChallenge
     <#
         .SYNOPSIS
             Algorithm to solve the server challenge during password authentication.
+        
+        .DESCRIPTION
+            Server needs to resolve the challenge and keep the solution in memory before sending
+            the candidate to remote peer.
 
-        .PARAMETER SecurePassword
-            Registered password string for server authentication.
+        .PARAMETER Password
+            Type: SecureString
+            Default: None
+            Description: Secure String object containing the password for resolving challenge.            
 
         .PARAMETER Candidate
-            Random string used to solve the challenge. This string is public and is set across network by server.
-            Each time a new connection is requested to server, a new candidate is generated.
+            Type: String
+            Default: None
+            Description:
+                Random string used to solve the challenge. This string is public and is set across network by server.
+                Each time a new connection is requested to server, a new candidate is generated.
 
         .EXAMPLE
-            Resolve-AuthenticationChallenge -SecurePassword "s3cr3t!" -Candidate "rKcjdh154@]=Ldc"
+            Resolve-AuthenticationChallenge -Password "s3cr3t!" -Candidate "rKcjdh154@]=Ldc"
     #>
     param (        
        [Parameter(Mandatory=$True)]
@@ -398,19 +413,6 @@ class ClientIO {
     [System.IO.BinaryReader] $BinaryReader = $null
 
     ClientIO(
-        <#
-            .SYNOPSIS
-                Class constructor.
-
-            .PARAMETER RemoteAddress
-                IP/HOST of remote server.
-
-            .PARAMETER RemotePort
-                Remote server port.
-
-            .PARAMETER UseTLSv1_3
-                Define whether or not SSL/TLS v1.3 must be used.
-        #>
         [string] $RemoteAddress = "127.0.0.1",
         [int] $RemotePort = 2801,
         [bool] $UseTLSv1_3 = $false
@@ -562,13 +564,15 @@ class ClientIO {
     [void]Authentify([SecureString] $SecurePassword) {
         <#
             .SYNOPSIS
-                Handle authentication process with remote server.
+                Handle authentication process with remote peer.
 
             .PARAMETER Password
-                Password used for authentication with server.
+                Type: SecureString
+                Default: None
+                Description: Secure String object containing the password.                
 
             .EXAMPLE
-                .Authentify("s3cr3t!")
+                .Authentify((ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force))
         #>
 
         Write-Verbose "Authentify with remote server (Challenged-Based Authentication)..."
@@ -619,7 +623,8 @@ class ClientIO {
                 Read string message from remote peer with timeout support.
 
             .PARAMETER Timeout
-                Define the maximum time (in milliseconds) to wait for remote peer message.
+                Type: Integer                
+                Description: Maximum period of time to wait for incomming data.
         #>
         $defautTimeout = $this.SSLStream.ReadTimeout
         try
@@ -651,7 +656,8 @@ class ClientIO {
                 peer.
 
             .PARAMETER Object
-                A PowerShell Object to be serialized as JSON String.
+                Type: PSCustomObject
+                Description: Object to be serialized in JSON.    
         #>
 
         $this.Writer.WriteLine(($Object | ConvertTo-Json -Compress))
@@ -669,7 +675,8 @@ class ClientIO {
                 Read json string from remote peer and attempt to deserialize as a PowerShell Object.
 
             .PARAMETER Timeout
-                Define the maximum time (in milliseconds) to wait for remote peer message.
+                Type: Integer                
+                Description: Maximum period of time to wait for incomming data.
         #>
         return ($this.ReadLine($Timeout) | ConvertFrom-Json)
     }
@@ -739,7 +746,7 @@ class ViewerSession
     [int] $ResizeRatio = 0
     [PacketSize] $PacketSize = [PacketSize]::Size9216
     [BlockSize] $BlockSize = [BlockSize]::Size64
-    [bool] $HighQualityResize = $false
+    [bool] $FastResize = $false
 
     [ClientIO] $ClientDesktop = $null
     [ClientIO] $ClientEvents = $null
@@ -939,7 +946,7 @@ class ViewerSession
                 ImageCompressionQuality = $this.ImageCompressionQuality
                 PacketSize = $this.PacketSize
                 BlockSize = $this.BlockSize
-                HighQualityResize = $this.HighQualityResize           
+                FastResize = $this.FastResize           
             }
 
             if ($this.ViewerConfiguration.RequireResize)
@@ -1103,6 +1110,8 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         $scene = $null
         $sceneGraphics = $null
 
+        $destPoint = [System.Drawing.Point]::New(0, 0)
+
         while ($true)
         {                              
             try
@@ -1110,8 +1119,8 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 $null = $Param.Client.SSLStream.Read($struct, 0, $struct.Length)  
 
                 $totalBufferSize = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x0)
-                $rectLeft = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x4)
-                $rectTop = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)               
+                $destPoint.X = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x4)
+                $destPoint.Y = [System.Runtime.InteropServices.Marshal]::ReadInt32($struct, 0x8)               
 
                 $stream.SetLength($totalBufferSize)
 
@@ -1125,21 +1134,19 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                     }    
                             
                     $null = $stream.Write($Param.Client.BinaryReader.ReadBytes($bufferSize), 0, $bufferSize)
-                } until ($stream.Position -eq $stream.Length)                 
-
-                $stream.Position = 0                                                                
+                } until ($stream.Position -eq $stream.Length)                                                                               
                    
                 if ($stream.Length -eq 0)
                 {
                     continue
                 }
-
+                
                 if (-not $scene)
                 {
                     # First Iteration                
                     $scene = [System.Drawing.Image]::FromStream($stream)
 
-                    $sceneGraphics = [System.Drawing.Graphics]::FromImage($scene)
+                    $sceneGraphics = [System.Drawing.Graphics]::FromImage($scene)                    
                     $sceneGraphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy  
 
                     $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene
@@ -1147,17 +1154,10 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 else
                 {                    
                     # Next Iterations
-                    $sceneChunk = [System.Drawing.Image]::FromStream($stream)                    
-                    
                     $sceneGraphics.DrawImage(
-                        $sceneChunk,
-                        [System.Drawing.Point]::New(
-                            $rectLeft,
-                            $rectTop
-                        )
+                        [System.Drawing.Image]::FromStream($stream),
+                        $destPoint
                     )                        
-                    
-                    $sceneChunk.Dispose()
                     
                     $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Invalidate()
                 }                                    
@@ -1447,13 +1447,19 @@ function New-VirtualDesktopForm
             It returns a PowerShell object containing both Form and PaintBox.
 
         .PARAMETER Width
-            Width of new form.
+            Type: Integer
+            Default: 1200
+            Description: The pre-defined width of new form
 
         .PARAMETER Height
-            Height of new form.
+            Type: Integer
+            Default: 800
+            Description: The pre-defined height of new form            
 
         .PARAMETER Caption
-            Caption of new form.
+            Type: String
+            Default: PowerRemoteDesktop Viewer
+            Description: The pre-defined caption of new form.
 
         .EXAMPLE
             New-VirtualDesktopForm -Caption "New Desktop Form" -Width 1200 -Height 800
@@ -1472,7 +1478,7 @@ function New-VirtualDesktopForm
     $form.Text = $Caption
     $form.KeyPreview = $true # Necessary to capture keystrokes.
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-    $form.MaximizeBox = $false    
+    $form.MaximizeBox = $false        
 
     $pictureBox = New-Object System.Windows.Forms.PictureBox
     $pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill    
@@ -1496,10 +1502,14 @@ function New-RunSpace
             Terminal.
 
         .PARAMETER ScriptBlock
-            A PowerShell block of code to be evaluated on the new Runspace.
+            Type: ScriptBlock
+            Default: None
+            Description: Instructions to execute in new runspace.
 
         .PARAMETER Param
-            Optional extra parameters to be attached to Runspace.
+            Type: PSCustomObject
+            Default: None
+            Description: Object to attach in runspace context.
 
         .EXAMPLE
             New-RunSpace -Client $newClient -ScriptBlock { Start-Sleep -Seconds 10 }
@@ -1541,52 +1551,71 @@ function Invoke-RemoteDesktopViewer
 {
     <#
         .SYNOPSIS
-            Open a new Remote Desktop Session to remote Server.
+            Open a new remote desktop session with a remote server.
+
+        .DESCRIPTION
+            Notice: Prefer using SecurePassword over plain-text password even if a plain-text password is getting converted to SecureString anyway.
 
         .PARAMETER ServerAddress
-            Remote Server Address.
+            Type: String
+            Default: 127.0.0.1
+            Description: Remote server host/address.            
 
         .PARAMETER ServerPort
-            Remote Server Port.
+            Type: Integer
+            Default: 2801 (0 - 65535)
+            Description: Remote server port.            
 
         .PARAMETER SecurePassword
-            SecureString Password object used to authenticate with remote server (Recommended)
-
-            Call "ConvertTo-SecureString -String "YouPasswordHere" -AsPlainText -Force" on this parameter to convert
-            a plain-text String to SecureString.
-
-            See example section.
+            Type: SecureString
+            Default: None
+            Description: SecureString object containing password used to authenticate with remote server (Recommended)
 
         .PARAMETER Password
-            Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead)        
+            Type: String
+            Default: None
+            Description: Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead)            
 
         .PARAMETER UseTLSv1_3
-            Define whether or not client must use SSL/TLS v1.3 to communicate with remote server.
-            Recommended if possible.
+            Type: Switch
+            Default: False
+            Description: If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems)            
 
         .PARAMETER DisableVerbosity
-            Disable verbosity (not recommended)  
+            Type: Boolean
+            Default: False
+            Description: If present, program wont show verbosity messages.            
             
         .PARAMETER Clipboard
-            Define clipboard synchronization rules:
-                - "Disabled": Completely disable clipboard synchronization.
-                - "Receive": Update local clipboard with remote clipboard only.
-                - "Send": Send local clipboard to remote peer.
-                - "Both": Clipboards are fully synchronized between Viewer and Server.
+            Type: Enum
+            Default: Both
+            Description: 
+                Define clipboard synchronization mode (Both, Disabled, Send, Receive) see bellow for more detail.
+
+                * Disabled -> Clipboard synchronization is disabled in both side
+                * Receive  -> Only incomming clipboard is allowed
+                * Send     -> Only outgoing clipboard is allowed
+                * Both     -> Clipboard synchronization is allowed on both side
 
         .PARAMETER ImageCompressionQuality
-            JPEG Compression level from 0 to 100
-                0 = Lowest quality.
-                100 = Highest quality.
+            Type: Integer (0 - 100)
+            Default: 75 
+            Description: JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality.
 
         .PARAMETER Resize
-            If this switch is present, remote desktop resize will be forced according ResizeRatio option value.
+            Type: Switch
+            Default: None
+            Description: If present, remote desktop will get resized accordingly with ResizeRatio option.            
 
         .PARAMETER ResizeRatio
-            Define the resize ratio to apply to remote desktop (30 to 99)
+            Type: Integer (30 - 99)
+            Default: None
+            Description: Used with Resize option, define the resize ratio in percentage.
 
         .PARAMETER AlwaysOnTop
-            If this switch is present, virtual desktop form will be above all other windows.
+            Type: Switch
+            Default: False
+            Description: If present, virtual desktop form will be above all other window's.
 
         .PARAMETER BlockSize
             Type: Enum
@@ -1596,6 +1625,14 @@ function Invoke-RemoteDesktopViewer
                 (Advanced) Define the screen grid block size. 
                 Choose the block size accordingly to remote screen size / computer constrainsts (CPU / Network)
 
+                Size1024  -> 1024 Bytes (1KiB)
+                Size2048  -> 2048 Bytes (2KiB)
+                Size4096  -> 4096 Bytes (4KiB)
+                Size8192  -> 8192 Bytes (8KiB)
+                Size9216  -> 9216 Bytes (9KiB)
+                Size12288 -> 12288 Bytes (12KiB)
+                Size16384 -> 16384 Bytes (16KiB)
+
         .PARAMETER PacketSize
             Type: Enum
             Values: Size1024, Size2048, Size4096, Size8192, Size9216, Size12288, Size16384 
@@ -1604,12 +1641,19 @@ function Invoke-RemoteDesktopViewer
                 (Advanced) Define the network packet size for streams.
                 Choose the packet size accordingly to your network constrainsts.
 
-        .PARAMETER HighQualityResize
+                Size32  -> 32x32
+                Size64  -> 64x64
+                Size96  -> 96x96
+                Size128 -> 128x128
+                Size256	-> 256x256
+                Size512	-> 512x512
+
+        .PARAMETER FastResize
             Type: Switch
             Default: None
             Description:
                 Control the quality of remote desktop resize (smoothing) if applicable.
-                If you lack of network speed, this option is not recommended.
+                If you lack of network speed, this option is recommended.
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
@@ -1623,16 +1667,14 @@ function Invoke-RemoteDesktopViewer
         [ValidateRange(0, 65535)]
         [int] $ServerPort = 2801,        
 
-        [switch] $UseTLSv1_3,
-                           
+        [switch] $UseTLSv1_3,                        
         [SecureString] $SecurePassword,
         [String] $Password,                
-
         [switch] $DisableVerbosity,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
 
         [ValidateRange(0, 100)]
-        [int] $ImageCompressionQuality = 100,
+        [int] $ImageCompressionQuality = 75,
 
         [switch] $Resize,
 
@@ -1642,7 +1684,7 @@ function Invoke-RemoteDesktopViewer
         [switch] $AlwaysOnTop,
         [PacketSize] $PacketSize = [PacketSize]::Size9216,
         [BlockSize] $BlockSize = [BlockSize]::Size64,
-        [switch] $HighQualityResize = $false
+        [switch] $FastResize = $false
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1691,7 +1733,7 @@ function Invoke-RemoteDesktopViewer
             $session.ImageCompressionQuality = $ImageCompressionQuality
             $session.PacketSize = $PacketSize
             $session.BlockSize = $BlockSize
-            $session.HighQualityResize = $HighQualityResize
+            $session.FastResize = $FastResize
 
             if ($Resize)
             {
@@ -1756,16 +1798,24 @@ function Invoke-RemoteDesktopViewer
                             This event is used to simulate mouse move and clicks.
 
                         .PARAMETER X
-                            The position of mouse in horizontal axis.
+                            Type: Integer
+                            Default: None
+                            Description: The position of mouse in horizontal axis.
 
                         .PARAMETER Y
-                            The position of mouse in vertical axis.
+                            Type: Integer
+                            Default: None
+                            Description: The position of mouse in vertical axis.
 
                         .PARAMETER Type
-                            The type of mouse event (Example: Move, Click)
+                            Type: Enum
+                            Default: None
+                            Description:  The type of mouse event (Example: Move, Click)
 
                         .PARAMETER Button
-                            The pressed button on mouse (Example: Left, Right, Middle)
+                            Type: String
+                            Default: None
+                            Description: The pressed button on mouse (Example: Left, Right, Middle)
 
                         .EXAMPLE
                             New-MouseEvent -X 10 -Y 35 -Type "Up" -Button "Left"
@@ -1800,7 +1850,9 @@ function Invoke-RemoteDesktopViewer
                             This event is used to simulate keyboard strokes.  
 
                         .PARAMETER Keys
-                            Plain text keys to be simulated on remote computer.
+                            Type: String
+                            Default: None
+                            Description: Plain text keys to be simulated on remote computer.
 
                         .EXAMPLE
                             New-KeyboardEvent -Keys "Hello, World"
@@ -1827,16 +1879,24 @@ function Invoke-RemoteDesktopViewer
                             When event is generated, it is immediately sent to remote server.
 
                         .PARAMETER X
-                            The position of virtual mouse in horizontal axis.
+                            Type: Integer
+                            Default: None
+                            Description: The position of virtual mouse in horizontal axis.
 
                         .PARAMETER Y
-                            The position of virtual mouse in vertical axis.
+                            Type: Integer
+                            Default: None
+                            Description: The position of virtual mouse in vertical axis.
 
                         .PARAMETER Type
-                            The type of mouse event (Example: Move, Click)
+                            Type: Integer
+                            Default: None
+                            Description: The type of mouse event (Example: Move, Click)
 
                         .PARAMETER Button
-                            The pressed button on mouse (Example: Left, Right, Middle)
+                            Type: Integer
+                            Default: None
+                            Description: The pressed button on mouse (Example: Left, Right, Middle)
 
                         .EXAMPLE
                            Send-VirtualMouse -X 10 -Y 20 -Type "Move"
@@ -1878,7 +1938,9 @@ function Invoke-RemoteDesktopViewer
                             Send to remote server key strokes to simulate.
 
                         .PARAMETER KeyChain
-                            A string representing character(s) to simulate remotely.
+                            Type: String
+                            Default: None
+                            Description: A string representing character(s) to simulate remotely.
 
                         .EXAMPLE
                             Send-VirtualKeyboard -KeyChain "Hello, World"
