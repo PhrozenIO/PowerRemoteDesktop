@@ -28,12 +28,12 @@ switch ($scenario)
 {
     2 
     { 
-        Invoke-RemoteDesktopViewer -Password $password -EncodedCertificate $encodedCertificate
+        Invoke-RemoteDesktopServer -Password $password -EncodedCertificate $encodedCertificate
     } 
 
     3 
     {
-        Invoke-RemoteDesktopViewer -Password $password
+        Invoke-RemoteDesktopServer -Password $password
     }
 
     4 
@@ -41,7 +41,7 @@ switch ($scenario)
         Write-Host "⚡Check that TLSv1.3 is working."
         Write-Host "⚡Check that certificate file is correctly loaded and used."
 
-        Invoke-RemoteDesktopViewer -Password $password -CertificateFile "c:\temp\phrozen.p12" -UseTLSv1_3
+        Invoke-RemoteDesktopServer -Password $password -CertificateFile "c:\temp\phrozen.p12" -UseTLSv1_3
     }
 
     5 
@@ -50,28 +50,28 @@ switch ($scenario)
         Write-Host "⚡Check that remote viewer can't control mouse and keyboard."
         Write-Host "⚡Check that computer wont go to sleep."
 
-        Invoke-RemoteDesktopViewer -Password $password -CertificateFile "c:\temp\phrozen.p12" -DisableVerbosity -ViewOnly -PreventComputerToSleep
+        Invoke-RemoteDesktopServer -Password $password -CertificateFile "c:\temp\phrozen.pfx" -DisableVerbosity -ViewOnly -PreventComputerToSleep
     }
 
     6 
     {
         Write-Host "⚡Check if server is only authorized to receive remote clipboard."
 
-        Invoke-RemoteDesktopViewer -Password $password -EncodedCertificate $encodedCertificate -Clipboard "Receive"
+        Invoke-RemoteDesktopServer -Password $password -EncodedCertificate $encodedCertificate -Clipboard "Receive"
     }
 
     7 
     {
         Write-Host "⚡Check if server is only authorized to send local clipboard."
 
-        Invoke-RemoteDesktopViewer -Password $password -EncodedCertificate $encodedCertificate -Clipboard "Send"
+        Invoke-RemoteDesktopServer -Password $password -EncodedCertificate $encodedCertificate -Clipboard "Send"
     }
 
     8 
     {
         Write-Host "⚡Check if clipboard synchronization is completely disabled."
 
-        Invoke-RemoteDesktopViewer -Password $password -EncodedCertificate $encodedCertificate -Clipboard "Disabled"
+        Invoke-RemoteDesktopServer -Password $password -EncodedCertificate $encodedCertificate -Clipboard "Disabled"
     }
 
     default 

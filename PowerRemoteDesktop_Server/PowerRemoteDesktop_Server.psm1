@@ -2681,7 +2681,7 @@ class ValidateCertificateFileAttribute : System.Management.Automation.ValidateAr
         }      
         
         try
-        {
+        {            
             $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $arguments 
         }
         catch
@@ -2713,7 +2713,7 @@ class ValidateEncodedCertificateAttribute : System.Management.Automation.Validat
             $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 @(, [Convert]::FromBase64String($arguments)) 
         }
         catch
-        {
+        {            
             throw "Specified parameter is not a valid base64 encoded string or not a valid x509 certificate."
         }
 

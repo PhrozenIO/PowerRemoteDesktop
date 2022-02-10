@@ -494,12 +494,16 @@ https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8
 * Keyboard simulation improved.
 * Various Optimization and fixes.
 
+### 10 February 2022 (3.1.0)
+
+* Code refactoring and improvement.
+* Desktop streaming improvement to gain few more FPS.
+
 ### List of ideas and TODO
 
 * 🟢 Support Password Protected external Certificates.
-* 🟢 Mutual Authentication for SSL/TLS (Client Certificate).                     
-* 🟠 Listen for local/remote screen resolution update event.
-* 🟠 Desktop Streaming Optimization.
+* 🟢 Mutual Authentication for SSL/TLS (Client Certificate)                
+* 🟠 Interrupt sessions when local resolution has changed.
 * 🟠 Mouse Move / Events Optimization.
 * 🔴 LogonUI Support.
 
