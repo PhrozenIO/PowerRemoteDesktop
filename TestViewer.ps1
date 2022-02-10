@@ -33,67 +33,78 @@ Write-Host ""
 
 switch ($scenario)
 {
-    2 { 
+    2 
+    { 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost 
     }  
 
-    3 { 
+    3 
+    { 
         Write-Host "⚡Check that verbosity is not shown."
         Write-Host "⚡Check that virtual desktop form is above all windows."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -DisableVerbosity -AlwaysOnTop 
     }
 
-    4 { 
+    4 
+    { 
         Write-Host "⚡Check that TLSv1.3 is working."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -UseTLSv1_3 
     }
 
-    5 { 
+    5 
+    { 
         Write-Host "⚡Check if viewer is only authorized to receive remote clipboard."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Clipboard "Receive"
     }
 
-    6 { 
+    6 
+    { 
         Write-Host "⚡Check if viewer is only authorized to send local clipboard."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Clipboard "Send" 
     }
 
-    7 { 
+    7 
+    { 
         Write-Host "⚡Check if clipboard synchronization is completely disabled."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Clipboard "Disabled" 
     }
 
-    8 { 
+    8 
+    { 
         Write-Host "⚡Check if image quality is really low."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -ImageCompressionQuality 0 
     }
 
-    9 { 
+    9 
+    { 
         Write-Host "⚡Check if image quality is not really good."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -ImageCompressionQuality 30 
     }
 
-    10 { 
+    10 
+    { 
         Write-Host "⚡Check if image quality is really good."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -ImageCompressionQuality 100 
     }
 
-    11 { 
+    11 
+    { 
         Write-Host "⚡Check if desktop image is reduced by 50%."
         Write-Host "⚡Check if resize quality is bad."
 
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 50 -FastResize
     }
 
-    12 { 
+    12 
+    { 
         Write-Host "⚡Check if desktop image is reduced by 20%."
         Write-Host "⚡Control block size."
         Write-Host "⚡Control packet size."
@@ -101,13 +112,15 @@ switch ($scenario)
         Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 80 -PacketSize "Size16384" -BlockSize "Size128"
     }
 
-    13 {
+    13 
+    {
         Write-Host "⚡Be sure that authentication fails with remote server." 
         
         Invoke-RemoteDesktopViewer -Password "bad@Bad123!Bad" -ServerAddress $remoteHost
     }
 
-    default { 
+    default 
+    { 
         Invoke-RemoteDesktopViewer -SecurePassword (ConvertTo-SecureString -String $password -AsPlainText -Force) -ServerAddress $remoteHost 
     }
 }
