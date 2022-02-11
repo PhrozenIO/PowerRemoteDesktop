@@ -353,6 +353,7 @@ Invoke-RemoteDesktopServer
 | EncodedCertificate     | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
 | ViewOnly               | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
 | PreventComputerToSleep | Switch           | False      | If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections. |
+| CertificatePassword    | SecureString     | None       | Specify the password used to open a password-protected x509 Certificate provided by user. | 
 
 ##### Server Address Examples
 
@@ -498,13 +499,12 @@ https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8
 
 * Code refactoring and improvement.
 * Desktop streaming improvement to gain few more FPS.
+* Support password-protected external x509 Certificates.
 
 ### List of ideas and TODO
 
-* 🟢 Support Password Protected external Certificates.
 * 🟢 Mutual Authentication for SSL/TLS (Client Certificate)                
 * 🟠 Interrupt sessions when local resolution has changed.
-* 🟠 Mouse Move / Events Optimization.
 * 🔴 LogonUI Support.
 
 🟢 = Easy

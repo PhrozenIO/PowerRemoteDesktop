@@ -902,20 +902,12 @@ $global:DesktopStreamScriptBlock = {
 
     $blockRect = New-Object -TypeName System.Drawing.Rectangle
 
-    $ptrBlockMemSize = $null    
+    $topLeftBlock = [System.Drawing.Point]::Empty
+    $bottomRightBlock = [System.Drawing.Point]::Empty    
     try
     {                    
         while ($Param.SafeHash.SessionActive)
         {      
-             if ($firstIteration)
-            {
-                $updatedRect = $virtualScreenBounds              
-            }
-            else
-            {
-                $updatedRect = [System.Drawing.Rectangle]::Empty
-            }
-
             if ($ResizeDesktop)
             {                  
                 try
@@ -963,6 +955,8 @@ $global:DesktopStreamScriptBlock = {
                 }
             }            
 
+            $updated = $false
+
             for ($y = 0; $y -lt $vertBlockCount; $y++)    
             {                             
                 for ($x = 0; $x -lt $horzBlockCount; $x++)
@@ -1008,37 +1002,39 @@ $global:DesktopStreamScriptBlock = {
                             if ([MSVCRT]::memcmp($bmpBlockData.Scan0, $SpaceGrid[$y][$x], $ptrBlockMemSize) -ne [IntPtr]::Zero)
                             {
                                 [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $ptrBlockMemSize) 
+                                
+                                if (-not $updated)
+                                {                  
+                                    # Initialize with the first dirty block coordinates                  
+                                    $topLeftBlock.X = $x
+                                    $topLeftBlock.Y = $y
 
-                                if ($updatedRect.IsEmpty)
-                                {
-                                    $updatedRect.X = $x * $BlockSize
-                                    $updatedRect.Width = $BlockSize
+                                    $bottomRightBlock = $topLeftBlock
 
-                                    $updatedRect.Y = $y * $BlockSize
-                                    $updatedRect.Height = $BlockSize                                    
+                                    $updated = $true
                                 }
                                 else
                                 {    
-                                    if ($x * $BlockSize -lt $updatedRect.X)
+                                    if ($x -lt $topLeftBlock.X)
                                     {
-                                        $updatedRect.X = $x * $BlockSize
+                                        $topLeftBlock.X = $x
                                     }
 
-                                    if (($x+1) * $BlockSize -gt $updatedRect.Right)
+                                    if ($y -lt $topLeftBlock.Y)
                                     {
-                                        $updatedRect.Width = (($x + 1) * $BlockSize) - $updatedRect.X
+                                        $topLeftBlock.Y = $y
                                     }
 
-                                    if ($y * $BlockSize -lt $updatedRect.Y)
+                                    if ($x -gt $bottomRightBlock.X)
                                     {
-                                        $updatedRect.Y = $y * $BlockSize
+                                        $bottomRightBlock.X = $x
                                     }
 
-                                    if (($y+1) * $BlockSize -gt $updatedRect.Bottom)
+                                    if ($y -gt $bottomRightBlock.Y)
                                     {
-                                        $updatedRect.Height = (($y + 1) * $BlockSize) - $updatedRect.Y
-                                    }
-                                }
+                                        $bottomRightBlock.Y = $y
+                                    }   
+                                }                                                              
                             }                        
                         }
                     }
@@ -1050,7 +1046,22 @@ $global:DesktopStreamScriptBlock = {
                         }
                     }                               
                 }                            
-            }          
+            }     
+            
+            if ($firstIteration)
+            {
+                # Send the full desktop if we are in the first iteration
+                $updatedRect = $virtualScreenBounds
+            } 
+            elseif ($updated)
+            {                
+                # Create new updated rectangle pointing to the dirty region (since last snapshot)
+                $updatedRect.X = $topLeftBlock.X * $BlockSize
+                $updatedRect.Y = $topLeftBlock.Y * $BlockSize
+
+                $updatedRect.Width = (($bottomRightBlock.X * $BlockSize) + $BlockSize) - $updatedRect.Left
+                $updatedRect.Height = (($bottomRightBlock.Y * $BlockSize) + $BlockSize) - $updatedRect.Top                
+            }            
             
             if (-not $updatedRect.IsEmpty -and $desktopImage)
             {                           
@@ -2666,11 +2677,11 @@ function Test-Administrator
     )    
 }
 
-class ValidateCertificateFileAttribute : System.Management.Automation.ValidateArgumentsAttribute
+class ValidateFileAttribute : System.Management.Automation.ValidateArgumentsAttribute
 {
     <#
         .SYNOPSIS
-            Custom attribute validator to validate X509 certificate file with embedded private key.
+            Check if file argument exists on disk.
     #>
 
     [void]Validate([System.Object] $arguments, [System.Management.Automation.EngineIntrinsics] $engineIntrinsics)
@@ -2679,51 +2690,19 @@ class ValidateCertificateFileAttribute : System.Management.Automation.ValidateAr
         {
             throw [System.IO.FileNotFoundException]::new()
         }      
-        
-        try
-        {            
-            $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $arguments 
-        }
-        catch
-        {
-            throw "Specified certificate file is not a valid X509 certificate or is corrupted."
-        }
-
-        if (-not $Certificate.HasPrivateKey)
-        {
-            throw "Private key is missing from certificate. Please use a valid X509 which includes private key."
-        }
-
-        $Certificate = $null
     }
 }
 
-class ValidateEncodedCertificateAttribute : System.Management.Automation.ValidateArgumentsAttribute
+class ValidateBase64StringAttribute : System.Management.Automation.ValidateArgumentsAttribute
 {
     <#
         .SYNOPSIS
-            Custom attribute validator to validate base64 encoded string that contains a X509 certificate with embedded
-            private key.
+            Check if string argument is a valid Base64 String.
     #>
 
     [void]Validate([System.Object] $arguments, [System.Management.Automation.EngineIntrinsics] $engineIntrinsics)
     {
-        try
-        {
-            $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 @(, [Convert]::FromBase64String($arguments)) 
-        }
-        catch
-        {            
-            throw "Specified parameter is not a valid base64 encoded string or not a valid x509 certificate."
-        }
-
-
-        if (-not $Certificate.HasPrivateKey)
-        {
-            throw "Private key is missing from certificate. Please use a valid X509 which includes private key."
-        }
-
-        $Certificate = $null
+        [Convert]::FromBase64String($arguments)
     }
 }
 
@@ -2806,6 +2785,11 @@ function Invoke-RemoteDesktopServer
             Default: False
             Description: If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections.
 
+        .PARAMETER CertificatePassword
+            Type: SecureString
+            Default: None
+            Description: Specify the password used to open a password-protected x509 Certificate provided by user.
+
         .EXAMPLE
             Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)
             Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force) -CertificateFile "c:\certs\phrozen.p12"
@@ -2817,20 +2801,21 @@ function Invoke-RemoteDesktopServer
         [ValidateRange(0, 65535)]
         [int] $ListenPort = 2801,   
 
-        [SecureString] $SecurePassword,
+        [SecureString] $SecurePassword = $null,
         [string] $Password = "",   
 
-        [ValidateCertificateFile()]     
+        [ValidateFile()]     
         [String] $CertificateFile = $null,   
 
-        [ValidateEncodedCertificate()]
+        [ValidateBase64String()]
         [string] $EncodedCertificate = "",
 
         [switch] $UseTLSv1_3,        
         [switch] $DisableVerbosity,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
         [switch] $ViewOnly,
-        [switch] $PreventComputerToSleep
+        [switch] $PreventComputerToSleep,
+        [SecureString] $CertificatePassword = $null
     )    
 
     $oldErrorActionPreference = $ErrorActionPreference
@@ -2866,13 +2851,40 @@ function Invoke-RemoteDesktopServer
         {
             $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
 
-            if ($CertificateFile)
+            try
             {
-                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile
+                if ($CertificateFile)
+                {
+                    $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile, $CertificatePassword
+                }
+                else
+                {
+                    $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 ([Convert]::FromBase64String($EncodedCertificate)), $CertificatePassword
+                }
             }
-            else
+            catch
             {
-                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 @(, [Convert]::FromBase64String($EncodedCertificate))
+                $message =  "Could not open provided x509 Certificate. Possible Reasons:`r`n" +
+                            "* Provided certificate is not a valid x509 Certificate.`r`n" +
+                            "* Certificate is corrupted.`r`n"                        
+
+                if (-not $CertificatePassword)
+                {
+                    $message += "* Certificate is protected by a password.`r`n"
+                }
+                else
+                {
+                    $message += "* Provided certificate password is not valid.`r`n"     
+                }    
+                
+                $message += "More detail: $($_)"
+
+                throw $message
+            }
+
+            if (-not $Certificate.HasPrivateKey)
+            {
+                throw "Provided Certificate must have private-key included."
             }
         }
 

@@ -1152,7 +1152,7 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                     $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene
                 } 
                 else
-                {                    
+                {   
                     # Next Iterations
                     $sceneGraphics.DrawImage(
                         [System.Drawing.Image]::FromStream($stream),
