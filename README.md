@@ -239,13 +239,13 @@ Create a new remote desktop session with a Power Remote Desktop Server.
 | DisableVerbosity        | Switch           | False      | If present, program wont show verbosity messages |
 | UseTLSv1_3              | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
 | Clipboard               | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
-| ImageCompressionQuality | Integer (0-100)  | 100        | JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality. |
+| ImageCompressionQuality | Integer (0-100)  | 75         | JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality. |
 | Resize                  | Switch           | False      | If present, remote desktop will get resized accordingly with `ResizeRatio` option. |
 | ResizeRatio             | Integer (30-99)  | 90         | Used with `Resize` option, define the resize ratio in percentage. |
 | AlwaysOnTop             | Switch           | False      | If present, virtual desktop form will be above all other window's |
 | PacketSize              | Enum             | Size9216   | Define the network packet size for streams. Choose the packet size accordingly to your network constrainsts. |
 | BlockSize               | Enum             | Size64     | Define the screen grid block size. Choose the block size accordingly to remote screen size / computer constrainsts (CPU / Network) |
-| HighQualityResize       | Switch           | False      | Control the quality of remote desktop resize (smoothing) if applicable. If you lack of network speed, this option is not recommended. |
+| FastResize              | Switch           | False      | Control the quality of remote desktop resize (smoothing) if applicable. If you lack of network speed, this option is recommended. |
 
 ##### Clipboard Mode Enum Properties
 
@@ -352,7 +352,8 @@ Invoke-RemoteDesktopServer
 | CertificateFile        | String           | None       | A file containing valid certificate information (x509), must include the **private key**  |
 | EncodedCertificate     | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
 | ViewOnly               | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
-| PreventComputerToSleep | Switch           | None       | If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections. |
+| PreventComputerToSleep | Switch           | False      | If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections. |
+| CertificatePassword    | SecureString     | None       | Specify the password used to open a password-protected x509 Certificate provided by user. | 
 
 ##### Server Address Examples
 
@@ -494,13 +495,16 @@ https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8
 * Keyboard simulation improved.
 * Various Optimization and fixes.
 
+### 10 February 2022 (3.1.0)
+
+* Code refactoring and improvement.
+* Desktop streaming improvement to gain few more FPS.
+* Support password-protected external x509 Certificates.
+
 ### List of ideas and TODO
 
-* 🟢 Support Password Protected external Certificates.
-* 🟢 Mutual Authentication for SSL/TLS (Client Certificate).                     
-* 🟠 Listen for local/remote screen resolution update event.
-* 🟠 Desktop Streaming Optimization.
-* 🟠 Mouse Move / Events Optimization.
+* 🟢 Mutual Authentication for SSL/TLS (Client Certificate)                
+* 🟠 Interrupt sessions when local resolution has changed.
 * 🔴 LogonUI Support.
 
 🟢 = Easy

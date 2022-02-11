@@ -72,18 +72,18 @@ Add-Type @"
         public static extern void CopyMemory(
             IntPtr dest,
             IntPtr src,
-            uint count
+            IntPtr count
         );        
     }
 
     public static class MSVCRT
     {
         [DllImport("msvcrt.dll", CallingConvention=CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
-        public static extern int memcmp(IntPtr p1, IntPtr p2, UInt64 count);
+        public static extern IntPtr memcmp(IntPtr p1, IntPtr p2, IntPtr count);
     }
 "@
 
-$global:PowerRemoteDesktopVersion = "3.0.0"
+$global:PowerRemoteDesktopVersion = "3.1.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -262,10 +262,8 @@ function Invoke-PreventSleepMode
     #>
 
     $ES_AWAYMODE_REQUIRED = [uint32]"0x00000040"
-    $ES_CONTINUOUS = [uint32]"0x80000000"
-    $ES_DISPLAY_REQUIRED = [uint32]"0x00000002"
-    $ES_SYSTEM_REQUIRED = [uint32]"0x00000001"
-    $ES_USER_PRESENT = [uint32]"0x00000004"
+    $ES_CONTINUOUS = [uint32]"0x80000000"    
+    $ES_SYSTEM_REQUIRED = [uint32]"0x00000001"    
 
     return [Kernel32]::SetThreadExecutionState(
         $ES_CONTINUOUS -bor
@@ -331,7 +329,9 @@ function Test-PasswordComplexity
                 * At least of upper case character. 
 
         .PARAMETER SecurePasswordCandidate
-            The password object to test
+            Type: SecureString
+            Default: None
+            Description: Secure String object containing the password to test.            
     #>
     param (
         [Parameter(Mandatory=$True)]
@@ -392,29 +392,45 @@ function New-DefaultX509Certificate
                     * base64 -i phrozen.p12
 
         .PARAMETER X509_CN
-            Certificate Common Name.
+            Type: String
+            Default: PowerRemoteDesktop.Server
+            Description: Certificate Common Name.
 
         .PARAMETER X509_O
-            Certificate Organisation.
+            Type: String
+            Default: Phrozen 
+            Description: Certificate Organisation.
 
         .PARAMETER X509_L
-            Certificate Locality (City)
+            Type: String
+            Default: Maisons Laffitte
+            Description: Certificate Locality (City)
 
         .PARAMETER X509_S
-            Certificate State.
+            Type: String
+            Default: Yvelines
+            Description: Certificate State.
 
         .PARAMETER X509_C
-            Certificate Company Name.
+            Type: String
+            Default: FR
+            Description: Certificate Company Name.
 
         .PARAMETER X509_OU
-            Certificate Organizational Unit.
+            Type: String
+            Default: Freeware
+            Description: Certificate Organizational Unit.
 
         .PARAMETER HashAlgorithmName
-            Certificate Hash Algorithm.
-                Example: SHA128, SHA256, SHA512...
+            Type: String
+            Default: SHA512
+            Description: Certificate Hash Algorithm.
+                         Example: SHA128, SHA256, SHA512...
 
         .PARAMETER CertExpirationInDays
-            Certificate Expiration in days.
+            Type: Integer
+            Default: 365
+            Description: Certificate expiration in days.
     #>
     param (
         [string] $X509_CN = "PowerRemoteDesktop.Server",
@@ -621,7 +637,9 @@ function Get-X509CertificateFromStore
             certificate when starting a new Remote Desktop Server.
 
         .PARAMETER SubjectName
-            The certificate Subject Name to retrieve from local machine certificate store.
+            Type: String
+            Default: PowerRemoteDesktop.Server
+            Description: The certificate Subject Name to retrieve from local machine certificate store.
 
         .EXAMPLE
             Get-X509CertificateFromStore -SubjectName "PowerRemoteDesktop.Server"
@@ -701,7 +719,9 @@ function Get-SHA512FromString
             Return the SHA512 value from string.
 
         .PARAMETER String
-            A String to hash.
+            Type: String
+            Default : None
+            Description: A String to hash.
 
         .EXAMPLE
             Get-SHA512FromString -String "Hello, World"
@@ -760,11 +780,16 @@ function Resolve-AuthenticationChallenge
             the candidate to remote peer.
 
         .PARAMETER Password
-            Registered password string for server authentication.
+            Type: SecureString
+            Default: None
+            Description: Secure String object containing the password for resolving challenge.            
 
         .PARAMETER Candidate
-            Random string used to solve the challenge. This string is public and is set across network by server.
-            Each time a new connection is requested to server, a new candidate is generated.
+            Type: String
+            Default: None
+            Description:
+                Random string used to solve the challenge. This string is public and is set across network by server.
+                Each time a new connection is requested to server, a new candidate is generated.
 
         .EXAMPLE
             Resolve-AuthenticationChallenge -Password "s3cr3t!" -Candidate "rKcjdh154@]=Ldc"
@@ -789,7 +814,7 @@ function Resolve-AuthenticationChallenge
 
 $global:DesktopStreamScriptBlock = { 
     $BlockSize = [int]$Param.SafeHash.ViewerConfiguration.BlockSize
-    $HighQualityResize = $Param.SafeHash.ViewerConfiguration.HighQualityResize
+    $FastResize = $Param.SafeHash.ViewerConfiguration.FastResize
     $packetSize = [int]$Param.SafeHash.ViewerConfiguration.PacketSize  
 
     $WidthConstrainsts = 0
@@ -853,6 +878,9 @@ $global:DesktopStreamScriptBlock = {
         $bitmapPixelFormat
     )   
 
+    $graphics = [System.Drawing.Graphics]::FromImage($desktopImage)
+    $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+    
     if ($ResizeDesktop)
     {
         $fullSizeDesktop = New-Object System.Drawing.Bitmap(
@@ -861,65 +889,37 @@ $global:DesktopStreamScriptBlock = {
             $bitmapPixelFormat
         )                   
 
-        $fullSizeDesktopGraphics = [System.Drawing.Graphics]::FromImage($fullSizeDesktop)
+        $fullSizeDesktopGraphics = [System.Drawing.Graphics]::FromImage($fullSizeDesktop)              
 
-        if ($HighQualityResize -and $ResizeDesktop)
-        {
-            $fullSizeDesktopGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $fullSizeDesktopGraphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-            $fullSizeDesktopGraphics.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $fullSizeDesktopGraphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality     
+        if ($FastResize -and $ResizeDesktop)
+        {            
+            $graphics.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor     
         }
-    }    
+    }       
 
     # SizeOf(DWORD) * 3 (SizeOf(Desktop) + SizeOf(Left) + SizeOf(Top))
     $struct = New-Object -TypeName byte[] -ArgumentList (([Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])) * 3)
 
-    $graphics = [System.Drawing.Graphics]::FromImage($desktopImage)
+    $blockRect = New-Object -TypeName System.Drawing.Rectangle
+
+    $topLeftBlock = [System.Drawing.Point]::Empty
+    $bottomRightBlock = [System.Drawing.Point]::Empty    
     try
-    {        
-        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()                
-
-        while ($true)
+    {                    
+        while ($Param.SafeHash.SessionActive)
         {      
-            # Using a stopwatch instead of replacing main loop "while ($true)" by "while($this.SafeHash.SessionActive)"
-            # sounds strange but this is done to avoid locking our SafeHash to regularly and loosing some
-            # performance. If you think this is useless, just use while($this.SafeHash.SessionActive) in main
-            # loop instead of while($true).
-            if ($stopWatch.ElapsedMilliseconds -ge 2000)
-            {
-                if (-not $Param.SafeHash.SessionActive)
-                {
-                    $stopWatch.Stop()                   
-
-                    break
-                }
-
-                $stopWatch.Restart()
-            }
-
-            # ///
-
-            if ($firstIteration)
-            {
-                $updatedRect = $virtualScreenBounds              
-            }
-            else
-            {
-                $updatedRect = New-Object -TypeName System.Drawing.Rectangle -ArgumentList 0, 0, 0, 0
-            }
-
             if ($ResizeDesktop)
             {                  
                 try
-                {              
+                {           
                     $fullSizeDesktopGraphics.CopyFromScreen(
                         $screen.Bounds.Location,
                         [System.Drawing.Point]::Empty,
                         [System.Drawing.Size]::New(
                             $fullSizeDesktop.Width,
                             $fullSizeDesktop.Height
-                        )
+                        ),
+                        [System.Drawing.CopyPixelOperation]::SourceCopy
                     )
                 }
                 catch
@@ -945,7 +945,8 @@ $global:DesktopStreamScriptBlock = {
                         [System.Drawing.Size]::New(
                             $virtualScreenBounds.Width,
                             $virtualScreenBounds.Height
-                        )
+                        ),
+                        [System.Drawing.CopyPixelOperation]::SourceCopy
                     )
                 }
                 catch
@@ -954,72 +955,86 @@ $global:DesktopStreamScriptBlock = {
                 }
             }            
 
+            $updated = $false
+
             for ($y = 0; $y -lt $vertBlockCount; $y++)    
             {                             
                 for ($x = 0; $x -lt $horzBlockCount; $x++)
-                {                       
-                    $rect = New-Object -TypeName System.Drawing.Rectangle
+                {                                           
+                    $blockRect.X = ($x * $BlockSize)
+                    $blockRect.Y = ($y * $BlockSize)
+                    $blockRect.Width = $BlockSize
+                    $blockRect.Height = $BlockSize
 
-                    $rect.X = ($x * $BlockSize)
-                    $rect.Y = ($y * $BlockSize)
-                    $rect.Width = $BlockSize
-                    $rect.Height = $BlockSize
-
-                    $rect = [System.Drawing.Rectangle]::Intersect($rect, $virtualScreenBounds)   
+                    if (
+                        # Intersecting consume some time, only intersect if required.
+                        $blockRect.Right -gt $virtualScreenBounds.Width -or
+                        $blockRect.Bottom -gt $virtualScreenBounds.Height
+                    )
+                    {
+                        $blockRect.Intersect($virtualScreenBounds)   
+                    }
                         
-                    $bmpBlock = $desktopImage.Clone($rect, $bitmapPixelFormat)
+                    $bmpBlock = $desktopImage.Clone($blockRect, $bitmapPixelFormat)
+
+                    $blockRect.X = 0
+                    $blockRect.Y = 0
 
                     $bmpBlockData = $bmpBlock.LockBits(
-                        [System.Drawing.Rectangle]::New(0, 0, $bmpBlock.Width, $bmpBlock.Height), 
-                        [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+                        $blockRect, 
+                        [System.Drawing.Imaging.ImageLockMode]::WriteOnly,
                         $bitmapPixelFormat
                     )
                     try
                     {
                         $blockMemSize = ($bmpBlockData.Stride * $bmpBlock.Height)
+                        $ptrBlockMemSize = [IntPtr]::New($blockMemSize)
+
                         if ($firstIteration)
                         {
                             # Big bang occurs, tangent univers is getting created, where is Donnie?
                             $SpaceGrid[$y][$x] = [Runtime.InteropServices.Marshal]::AllocHGlobal($blockMemSize)
                                                                                                     
-                            [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $blockMemSize)                        
+                            [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $ptrBlockMemSize)                        
                         }
                         else
-                        {                        
-                            if ([MSVCRT]::memcmp($bmpBlockData.Scan0, $SpaceGrid[$y][$x], $blockMemSize) -ne 0)
+                        {                                                                        
+                            if ([MSVCRT]::memcmp($bmpBlockData.Scan0, $SpaceGrid[$y][$x], $ptrBlockMemSize) -ne [IntPtr]::Zero)
                             {
-                                [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $blockMemSize) 
+                                [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $ptrBlockMemSize) 
+                                
+                                if (-not $updated)
+                                {                  
+                                    # Initialize with the first dirty block coordinates                  
+                                    $topLeftBlock.X = $x
+                                    $topLeftBlock.Y = $y
 
-                                if ($updatedRect.IsEmpty)
-                                {
-                                    $updatedRect.X = $x * $BlockSize
-                                    $updatedRect.Width = $BlockSize
+                                    $bottomRightBlock = $topLeftBlock
 
-                                    $updatedRect.Y = $y * $BlockSize
-                                    $updatedRect.Height = $BlockSize                                    
+                                    $updated = $true
                                 }
                                 else
                                 {    
-                                    if ($x * $BlockSize -lt $updatedRect.X)
+                                    if ($x -lt $topLeftBlock.X)
                                     {
-                                        $updatedRect.X = $x * $BlockSize
+                                        $topLeftBlock.X = $x
                                     }
 
-                                    if (($x+1) * $BlockSize -gt $updatedRect.Right)
+                                    if ($y -lt $topLeftBlock.Y)
                                     {
-                                        $updatedRect.Width = (($x + 1) * $BlockSize) - $updatedRect.X
+                                        $topLeftBlock.Y = $y
                                     }
 
-                                    if ($y * $BlockSize -lt $updatedRect.Y)
+                                    if ($x -gt $bottomRightBlock.X)
                                     {
-                                        $updatedRect.Y = $y * $BlockSize
+                                        $bottomRightBlock.X = $x
                                     }
 
-                                    if (($y+1) * $BlockSize -gt $updatedRect.Bottom)
+                                    if ($y -gt $bottomRightBlock.Y)
                                     {
-                                        $updatedRect.Height = (($y + 1) * $BlockSize) - $updatedRect.Y
-                                    }
-                                }
+                                        $bottomRightBlock.Y = $y
+                                    }   
+                                }                                                              
                             }                        
                         }
                     }
@@ -1031,8 +1046,23 @@ $global:DesktopStreamScriptBlock = {
                         }
                     }                               
                 }                            
-            }          
+            }     
+            
+            if ($firstIteration)
+            {
+                # Send the full desktop if we are in the first iteration
+                $updatedRect = $virtualScreenBounds
+            } 
+            elseif ($updated)
+            {                
+                # Create new updated rectangle pointing to the dirty region (since last snapshot)
+                $updatedRect.X = $topLeftBlock.X * $BlockSize
+                $updatedRect.Y = $topLeftBlock.Y * $BlockSize
 
+                $updatedRect.Width = (($bottomRightBlock.X * $BlockSize) + $BlockSize) - $updatedRect.Left
+                $updatedRect.Height = (($bottomRightBlock.Y * $BlockSize) + $BlockSize) - $updatedRect.Top                
+            }            
+            
             if (-not $updatedRect.IsEmpty -and $desktopImage)
             {                           
                 try
@@ -1133,7 +1163,7 @@ $global:DesktopStreamScriptBlock = {
     }  
 }
 
-$global:IngressEventScriptBlock = {       
+$global:IngressEventScriptBlock = {    
     enum MouseFlags {
         MOUSEEVENTF_ABSOLUTE = 0x8000
         MOUSEEVENTF_LEFTDOWN = 0x0002
@@ -1191,9 +1221,9 @@ $global:IngressEventScriptBlock = {
             0
         );
             
-    }
+    }    
 
-    while ($Param.SafeHash.SessionActive)                    
+    while ($true)                    
     {             
         try 
         {            
@@ -1458,10 +1488,14 @@ $global:EgressEventScriptBlock = {
                 Send an event to remote peer.
 
             .PARAMETER AEvent
-                Define what kind of event to send.
+                Type: Enum
+                Default: None
+                Description: The event to send to remote viewer.
 
             .PARAMETER Data
-                An optional object containing additional information about the event. 
+                Type: PSCustomObject
+                Default: None
+                Description: Additional information about the event.
         #>
         param (            
             [Parameter(Mandatory=$True)]
@@ -1499,7 +1533,7 @@ $global:EgressEventScriptBlock = {
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-    while ($Param.SafeHash.SessionActive)
+    while ($true)
     {
         # Events that occurs every seconds needs to be placed bellow.
         # If no event has occured during this second we send a Keep-Alive signal to
@@ -1546,7 +1580,7 @@ $global:EgressEventScriptBlock = {
         }
 
         # Monitor for global mouse cursor change
-        # Update Frequently (Maximum probe time to be efficient: 30ms)
+        # Update Frequently (Maximum probe time to be efficient: 50ms)
         $currentCursor = Get-GlobalMouseCursorIconHandle
         if ($currentCursor -ne 0 -and $currentCursor -ne $oldCursor)
         {   
@@ -1562,7 +1596,7 @@ $global:EgressEventScriptBlock = {
             $oldCursor = $currentCursor
         }    
 
-        Start-Sleep -Milliseconds 30 
+        Start-Sleep -Milliseconds 50 
     } 
 
     $stopWatch.Stop()
@@ -1579,10 +1613,14 @@ function New-RunSpace
             Terminal.
 
         .PARAMETER ScriptBlock
-            A PowerShell block of code to be evaluated on the new Runspace.
+            Type: ScriptBlock
+            Default: None
+            Description: Instructions to execute in new runspace.
 
         .PARAMETER Param
-            Optional extra parameters to be attached to Runspace.
+            Type: PSCustomObject
+            Default: None
+            Description: Object to attach in runspace context.
 
         .EXAMPLE
             New-RunSpace -Client $newClient -ScriptBlock { Start-Sleep -Seconds 10 }
@@ -1596,7 +1634,7 @@ function New-RunSpace
     )   
 
     $runspace = [RunspaceFactory]::CreateRunspace()
-    $runspace.ThreadOptions = "ReuseThread"
+    $runspace.ThreadOptions = "UseNewThread"
     $runspace.ApartmentState = "STA"
     $runspace.Open()                   
 
@@ -1619,7 +1657,6 @@ function New-RunSpace
         AsyncResult = $asyncResult
     }
 }
-
 
 class ClientIO {  
     [System.Net.Sockets.TcpClient] $Client = $null
@@ -1685,10 +1722,12 @@ class ClientIO {
                 Handle authentication process with remote peer.
 
             .PARAMETER Password
-                Password used to validate challenge and grant access for a new Client.
+                Type: SecureString
+                Default: None
+                Description: Secure String object containing the password.                
 
             .EXAMPLE
-                .Authentify("s3cr3t!")
+                .Authentify((ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force))
         #>        
         try
         { 
@@ -1761,7 +1800,8 @@ class ClientIO {
                 Read string message from remote peer with timeout support.
 
             .PARAMETER Timeout
-                Define the maximum time (in milliseconds) to wait for remote peer message.
+                Type: Integer                
+                Description: Maximum period of time to wait for incomming data.
         #>
         $defautTimeout = $this.SSLStream.ReadTimeout
         try
@@ -1793,7 +1833,8 @@ class ClientIO {
                 peer.
 
             .PARAMETER Object
-                A PowerShell Object to be serialized as JSON String.
+                Type: PSCustomObject
+                Description: Object to be serialized in JSON.                
         #>
 
         $this.Writer.WriteLine(($Object | ConvertTo-Json -Compress))
@@ -1811,7 +1852,8 @@ class ClientIO {
                 Read json string from remote peer and attempt to deserialize as a PowerShell Object.
 
             .PARAMETER Timeout
-                Define the maximum time (in milliseconds) to wait for remote peer message.
+                Type: Integer                
+                Description: Maximum period of time to wait for reading data.
         #>
         return ($this.ReadLine($Timeout) | ConvertFrom-Json)
     }
@@ -1906,14 +1948,16 @@ class ServerIO {
                 Accept new client and associate this client with a new ClientIO Object.
 
             .PARAMETER Timeout
-                By default AcceptTcpClient() will block current thread until a client connects.
-                
-                Using Timeout and a cool technique, you can stop waiting for client after a certain amount
-                of time (In Milliseconds)                
+                Type: Integer
+                Description:
+                    By default AcceptTcpClient() will block current thread until a client connects.
+                    
+                    Using Timeout and a cool technique, you can stop waiting for client after a certain amount
+                    of time (In Milliseconds)                
 
-                If Timeout is greater than 0 (Milliseconds) then connection timeout is enabled.
+                    If Timeout is greater than 0 (Milliseconds) then connection timeout is enabled.
 
-                Other method: AsyncWaitHandle.WaitOne([timespan])'h:m:s') -eq $true|$false with BeginAcceptTcpClient(...)
+                    Other method: AsyncWaitHandle.WaitOne([timespan])'h:m:s') -eq $true|$false with BeginAcceptTcpClient(...)
         #>
             
         if (-not (Test-PasswordComplexity -SecurePasswordCandidate $SecurePassword))
@@ -1999,7 +2043,7 @@ class ViewerConfiguration {
     [int] $ImageCompressionQuality = 100    
     [PacketSize] $PacketSize = [PacketSize]::Size9216
     [BlockSize] $BlockSize = [BlockSize]::Size64
-    [bool] $HighQualityResize = $false 
+    [bool] $FastResize = $false 
 
     [bool] ResizeDesktop()
     {
@@ -2059,7 +2103,8 @@ class ServerSession {
                 Compare two session object. In this case just compare session id string.
 
             .PARAMETER Id
-                A session id to compare with current session object.
+                Type: String
+                Description: A session id to compare with current session object.
         #>
         return ($this.Id -ceq $Id)
     }
@@ -2071,7 +2116,8 @@ class ServerSession {
                 Create a new desktop streaming worker (Runspace/Thread).
 
             .PARAMETER Client
-                An established connection with remote peer as a ClientIO Object.
+                Type: ClientIO
+                Description: Established connection with a remote peer.
         #>
         $param = New-Object -TypeName PSCustomObject -Property @{                      
             Client = $Client            
@@ -2092,7 +2138,8 @@ class ServerSession {
                 Create a new egress / ingress worker (Runspace/Thread) to process outgoing / incomming events.
 
             .PARAMETER Client
-                An established connection with remote peer as a ClientIO Object.
+                Type: ClientIO
+                Description: Established connection with a remote peer.
         #>
 
         $param = New-Object -TypeName PSCustomObject -Property @{                                                                           
@@ -2316,7 +2363,8 @@ class SessionManager {
                 Find a session by its id on current session pool.
 
             .PARAMETER SessionId
-                Session id to search in current pool.
+                Type: String
+                Description: SessionId to retrieve from session pool.
         #>
         foreach ($session in $this.Sessions)
         {
@@ -2346,8 +2394,7 @@ class SessionManager {
                 about current server marchine state then wait for viewer acknowledgement with desired
                 configuration (Ex: desired screen to capture, quality and local size constraints).
 
-                When session creation is done, client is then closed.                
-                
+                When session creation is done, client is then closed.                                
         #>
         try
         {                           
@@ -2425,9 +2472,9 @@ class SessionManager {
                 $session.SafeHash.ViewerConfiguration.BlockSize = [BlockSize]$viewerExpectation.BlockSize
             }
 
-            if ($viewerExpectation.PSobject.Properties.name -contains "HighQualityResize")
+            if ($viewerExpectation.PSobject.Properties.name -contains "FastResize")
             {
-                $session.SafeHash.ViewerConfiguration.HighQualityResize = $viewerExpectation.HighQualityResize
+                $session.SafeHash.ViewerConfiguration.FastResize = $viewerExpectation.FastResize
             }
 
             Write-Verbose "New session successfully created."
@@ -2468,7 +2515,7 @@ class SessionManager {
         {
             $Client.WriteLine(([ProtocolCommand]::ResourceNotFound))
 
-            throw "Session object matchin given id could not be find in active session pool."
+            throw "Could not locate session."
         }
 
         Write-Verbose "Client successfully attached to session: ""$($session.id)"""
@@ -2496,7 +2543,11 @@ class SessionManager {
     }
     
     [void] ListenForWorkers()
-    {               
+    {            
+        <#
+            .SYNOPSIS
+                Process server client queue and dispatch accordingly.
+        #>   
         while ($true)
         {          
             if (-not $this.Server -or -not $this.Server.Active())
@@ -2505,9 +2556,7 @@ class SessionManager {
             }
 
             try
-            {
-                # It is important to check regularly for dead sessions to let the garbage collector do his job
-                # and avoid dead threads (most of the time desktop streaming threads).
+            {                
                 $this.CheckSessionsIntegrity()
             }
             catch
@@ -2569,6 +2618,11 @@ class SessionManager {
 
     [void] CheckSessionsIntegrity()
     {
+        <#
+            .SYNOPSIS
+                Check if existing server sessions integrity is respected.
+                Use this method to free dead/half-dead sessions.
+        #>
         foreach ($session in $this.Sessions)
         {
             $session.CheckSessionIntegrity()
@@ -2579,7 +2633,7 @@ class SessionManager {
     {
         <#
             .SYNOPSIS
-                Close all existing sessions
+                Terminate existing server sessions.
         #>
 
         foreach ($session in $this.Sessions)
@@ -2594,7 +2648,7 @@ class SessionManager {
     {
         <#
             .SYNOPSIS
-                Close all existing sessions and dispose server.
+                Terminate existing server sessions then release server.
         #>
 
         $this.CloseSessions()
@@ -2612,7 +2666,7 @@ function Test-Administrator
 {
     <#
         .SYNOPSIS
-            Return true if current PowerShell is running with Administrator privilege, otherwise return false.
+            Check if current user is administrator.
     #>
     $windowsPrincipal = New-Object Security.Principal.WindowsPrincipal(
         [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -2623,84 +2677,146 @@ function Test-Administrator
     )    
 }
 
+class ValidateFileAttribute : System.Management.Automation.ValidateArgumentsAttribute
+{
+    <#
+        .SYNOPSIS
+            Check if file argument exists on disk.
+    #>
+
+    [void]Validate([System.Object] $arguments, [System.Management.Automation.EngineIntrinsics] $engineIntrinsics)
+    {
+        if(-not (Test-Path -Path $arguments))
+        {
+            throw [System.IO.FileNotFoundException]::new()
+        }      
+    }
+}
+
+class ValidateBase64StringAttribute : System.Management.Automation.ValidateArgumentsAttribute
+{
+    <#
+        .SYNOPSIS
+            Check if string argument is a valid Base64 String.
+    #>
+
+    [void]Validate([System.Object] $arguments, [System.Management.Automation.EngineIntrinsics] $engineIntrinsics)
+    {
+        [Convert]::FromBase64String($arguments)
+    }
+}
+
 function Invoke-RemoteDesktopServer
 {
     <#
         .SYNOPSIS
-            Start a new Remote Desktop Server.
+            Create and start a new PowerRemoteDesktop Server.
 
         .DESCRIPTION
-            Notice: Certificate options are evaluated in this order.
-                1) CertificateFile.
-                2) EncodedCertificate.
+            Notices: 
+            
+                1- Prefer using SecurePassword over plain-text password even if a plain-text password is getting converted to SecureString anyway.
+
+                2- Not specifying a custom certificate using CertificateFile or EncodedCertificate result in generating a default 
+                self-signed certificate (if not already generated) that will get installed on local machine thus requiring administrator privilege.
+                If you want to run the server as a non-privileged account, specify your own certificate location.
+
+                3- If you don't specify a SecurePassword or Password, a random complex password will be generated and displayed on terminal 
+                (this password is temporary)
 
         .PARAMETER ListenAddress
-            Define in which interface to listen for new viewer.
+            Type: String
+            Default: 0.0.0.0
+            Description: IP Address that represents the local IP address.
 
         .PARAMETER ListenPort
-            Define in which port to listen for new viewer.
+            Type: Integer
+            Default: 2801 (0 - 65535)
+            Description: The port on which to listen for incoming connection.
 
         .PARAMETER SecurePassword
-            SecureString Password object used by remote viewer to authenticate with server (Recommended)
-
-            Call "ConvertTo-SecureString -String "YouPasswordHere" -AsPlainText -Force" on this parameter to convert
-            a plain-text String to SecureString.
+            Type: SecureString
+            Default: None
+            Description: SecureString object containing password used to authenticate remote viewer (Recommended)
 
         .PARAMETER Password
-            Plain-Text Password used by remote viewer to authenticate with server (Not recommended, use SecurePassword instead)
-
-            If no password is specified, then a random complex password will be generated
-            and printed on terminal.
+            Type: String
+            Default: None
+            Description: Plain-Text Password used to authenticate remote viewer (Not recommended, use SecurePassword instead)
 
         .PARAMETER CertificateFile
-            A valid X509 Certificate (With Private Key) File. If set, this parameter is prioritize.
-
+            Type: String
+            Default: None
+            Description: A file containing valid certificate information (x509), must include the private key.
+            
         .PARAMETER EncodedCertificate
-            A valid X509 Certificate (With Private Key) encoded as a Base64 String.
+            Type: String (Base64 Encoded)
+            Default: None
+            Description: A base64 representation of the whole certificate file, must include the private key.            
 
         .PARAMETER UseTLSv1_3
-            Define whether or not TLS v1.3 must be used for communication with Viewer.
+            Type: Switch
+            Default: False
+            Description: If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems)
 
         .PARAMETER DisableVerbosity
-            Disable verbosity (not recommended)        
+            Type: Switch
+            Default: False
+            Description: If present, program wont show verbosity messages.       
 
         .PARAMETER Clipboard
-            Define clipboard synchronization rules:
-                - "Disabled": Completely disable clipboard synchronization.
-                - "Receive": Update local clipboard with remote clipboard only.
-                - "Send": Send local clipboard to remote peer.
-                - "Both": Clipboards are fully synchronized between Viewer and Server.
+            Type: Enum
+            Default: Both
+            Description: 
+                Define clipboard synchronization mode (Both, Disabled, Send, Receive) see bellow for more detail.
+
+                * Disabled -> Clipboard synchronization is disabled in both side
+                * Receive  -> Only incomming clipboard is allowed
+                * Send     -> Only outgoing clipboard is allowed
+                * Both     -> Clipboard synchronization is allowed on both side
 
         .PARAMETER ViewOnly (Default: None)
-            If this switch is present, viewer wont be able to take the control of mouse (moves, clicks, wheel) and keyboard. 
-            Useful for view session only.
+            Type: Swtich
+            Default: False
+            Description: If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized)
 
         .PARAMETER PreventComputerToSleep
             Type: Switch
+            Default: False
+            Description: If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections.
+
+        .PARAMETER CertificatePassword
+            Type: SecureString
             Default: None
-            Description:             
-                If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections.            
+            Description: Specify the password used to open a password-protected x509 Certificate provided by user.
+
+        .EXAMPLE
+            Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)
+            Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force) -CertificateFile "c:\certs\phrozen.p12"
     #>
 
     param (
         [string] $ListenAddress = "0.0.0.0", 
 
         [ValidateRange(0, 65535)]
-        [int] $ListenPort = 2801,
+        [int] $ListenPort = 2801,   
 
-        [SecureString] $SecurePassword,
-        [string] $Password = "",
+        [SecureString] $SecurePassword = $null,
+        [string] $Password = "",   
 
-        [string] $CertificateFile = "", # 1
-        # Or
-        [string] $EncodedCertificate = "", # 2
+        [ValidateFile()]     
+        [String] $CertificateFile = $null,   
+
+        [ValidateBase64String()]
+        [string] $EncodedCertificate = "",
 
         [switch] $UseTLSv1_3,        
         [switch] $DisableVerbosity,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
         [switch] $ViewOnly,
-        [switch] $PreventComputerToSleep
-    )
+        [switch] $PreventComputerToSleep,
+        [SecureString] $CertificatePassword = $null
+    )    
 
     $oldErrorActionPreference = $ErrorActionPreference
     $oldVerbosePreference = $VerbosePreference    
@@ -2731,17 +2847,44 @@ function Invoke-RemoteDesktopServer
 
         $Certificate = $null
 
-        if (($CertificateFile -and (Test-Path -Path $CertificateFile)) -or $EncodedCertificate)
+        if ($CertificateFile -or $EncodedCertificate)
         {
             $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
 
-            if ($CertificateFile)
+            try
             {
-                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile
+                if ($CertificateFile)
+                {
+                    $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile, $CertificatePassword
+                }
+                else
+                {
+                    $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 ([Convert]::FromBase64String($EncodedCertificate)), $CertificatePassword
+                }
             }
-            else
+            catch
             {
-                $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 @(, [Convert]::FromBase64String($EncodedCertificate))
+                $message =  "Could not open provided x509 Certificate. Possible Reasons:`r`n" +
+                            "* Provided certificate is not a valid x509 Certificate.`r`n" +
+                            "* Certificate is corrupted.`r`n"                        
+
+                if (-not $CertificatePassword)
+                {
+                    $message += "* Certificate is protected by a password.`r`n"
+                }
+                else
+                {
+                    $message += "* Provided certificate password is not valid.`r`n"     
+                }    
+                
+                $message += "More detail: $($_)"
+
+                throw $message
+            }
+
+            if (-not $Certificate.HasPrivateKey)
+            {
+                throw "Provided Certificate must have private-key included."
             }
         }
 
