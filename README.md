@@ -29,7 +29,7 @@ You can install PowerShell 7 for Windows [here](https://docs.microsoft.com/fr-fr
 
 ## Highlighted Features
 
-https://user-images.githubusercontent.com/2520298/150001915-0982fb1c-a729-4b21-b22c-a58e201bfe27.mp4
+<img src="Assets/image31.png" width="100%"/>
 
 * Remote Desktop Streaming with support of HDPI and Scaling.
 * Remote Control: Mouse (Moves, Clicks, Wheel) and Key Strokes (Keyboard)
@@ -484,8 +484,6 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * Handshake calls (auth + session / worker negociation) will now timeout to avoid possible dead locks.
 * Virtual Desktop Form can now be set always on top of other forms.
 * Server finally use secure string to handle password-authentication.
-
-https://user-images.githubusercontent.com/2520298/151220460-d620402b-da78-4d6d-8b5e-a96f44499013.mp4
 
 ### 9 February 2022 (3.0.0)
 
