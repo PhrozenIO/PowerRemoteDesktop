@@ -51,7 +51,7 @@ Add-Type @"
     }    
 "@
 
-$global:PowerRemoteDesktopVersion = "3.1.0"
+$global:PowerRemoteDesktopVersion = "3.1.2"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host

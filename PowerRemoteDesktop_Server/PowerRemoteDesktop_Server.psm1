@@ -83,7 +83,7 @@ Add-Type @"
     }
 "@
 
-$global:PowerRemoteDesktopVersion = "3.1.0"
+$global:PowerRemoteDesktopVersion = "3.1.2"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -2802,14 +2802,9 @@ function Invoke-RemoteDesktopServer
         [int] $ListenPort = 2801,   
 
         [SecureString] $SecurePassword = $null,
-        [string] $Password = "",   
-
-        [ValidateFile()]     
-        [String] $CertificateFile = $null,   
-
-        [ValidateBase64String()]
+        [string] $Password = "",           
+        [String] $CertificateFile = $null,           
         [string] $EncodedCertificate = "",
-
         [switch] $UseTLSv1_3,        
         [switch] $DisableVerbosity,
         [ClipboardMode] $Clipboard = [ClipboardMode]::Both,
@@ -2850,11 +2845,15 @@ function Invoke-RemoteDesktopServer
         if ($CertificateFile -or $EncodedCertificate)
         {
             $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
-
             try
             {
                 if ($CertificateFile)
                 {
+                    if(-not (Test-Path -Path $CertificateFile))
+                    {
+                        throw [System.IO.FileNotFoundException]::new()
+                    }
+
                     $Certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertificateFile, $CertificatePassword
                 }
                 else

@@ -17,7 +17,7 @@ Tested on:
 * **Windows 10**
 * **Windows 11**
 
-Current version: **3.0 Stable**
+Current version: **3.1.2 Stable**
 
 ## Performance
 
