@@ -61,6 +61,15 @@ Add-Type @"
 
         [DllImport("user32.dll")]
         public static extern int GetSystemMetrics(int nIndex);
+
+        [DllImport("User32.dll")] 
+        public static extern IntPtr GetWindowDC(IntPtr hWnd);
+
+        [DllImport("User32.dll")] 
+        public static extern bool ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetDesktopWindow();
     }    
 
     public static class Kernel32
@@ -79,11 +88,60 @@ Add-Type @"
     public static class MSVCRT
     {
         [DllImport("msvcrt.dll", CallingConvention=CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
-        public static extern IntPtr memcmp(IntPtr p1, IntPtr p2, IntPtr count);
+        public static extern IntPtr memcmp(
+            IntPtr p1,
+            IntPtr p2,
+            IntPtr count
+        );
+    }
+
+    public static class GDI32
+    {
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr DeleteDC(IntPtr hDc);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr DeleteObject(IntPtr hDc);
+
+        [DllImport("gdi32.dll"), SuppressUnmanagedCodeSecurity]
+        public static extern bool BitBlt(
+            IntPtr hdcDest,
+            int xDest,
+            int yDest,
+            int wDest,
+            int hDest,
+            IntPtr hdcSource,
+            int xSrc,
+            int ySrc,
+            int RasterOp
+        );
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateDIBSection(
+            IntPtr hdc,
+            IntPtr pbmi,
+            uint usage,
+            out IntPtr ppvBits,
+            IntPtr hSection,
+            uint offset
+        );
+
+        [DllImport ("gdi32.dll")]
+        public static extern IntPtr CreateCompatibleBitmap(
+            IntPtr hdc,
+            int nWidth,
+            int nHeight
+        );
+
+        [DllImport ("gdi32.dll")]
+        public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        [DllImport ("gdi32.dll")]
+        public static extern IntPtr SelectObject(IntPtr hdc, IntPtr bmp); 
     }
 "@
 
-$global:PowerRemoteDesktopVersion = "3.1.2"
+$global:PowerRemoteDesktopVersion = "4.0.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -813,281 +871,290 @@ function Resolve-AuthenticationChallenge
 }
 
 $global:DesktopStreamScriptBlock = { 
-    $BlockSize = [int]$Param.SafeHash.ViewerConfiguration.BlockSize
-    $FastResize = $Param.SafeHash.ViewerConfiguration.FastResize
-    $packetSize = [int]$Param.SafeHash.ViewerConfiguration.PacketSize  
-
-    $WidthConstrainsts = 0
-    $HeightConstrainsts = 0
-    
-    $ResizeDesktop = $Param.SafeHash.ViewerConfiguration.ResizeDesktop()
-    if ($ResizeDesktop)
-    {
-        $WidthConstrainsts = $Param.SafeHash.ViewerConfiguration.ExpectDesktopWidth
-        $HeightConstrainsts = $Param.SafeHash.ViewerConfiguration.ExpectDesktopHeight
-    }
-
-    $bitmapPixelFormat = [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb    
-
-    $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { 
-        $_.DeviceName -eq $Param.SafeHash.ViewerConfiguration.ScreenName 
-    }
-    if (-not $screen)
-    {
-        $screen = [System.Windows.Forms.Screen]::PrimaryScreen
-    }
-
-    $virtualScreenBounds = [System.Drawing.Rectangle]::New(
-        0,
-        0,
-        $screen.Bounds.Width,
-        $screen.Bounds.Height
-    )
-
-    if ($ResizeDesktop)
-    {
-        $virtualScreenBounds.Width = $WidthConstrainsts
-        $virtualScreenBounds.Height = $HeightConstrainsts
-    }    
-
-    $SpaceGrid = $null
-    $horzBlockCount = [math]::ceiling($virtualScreenBounds.Width / $BlockSize)
-    $vertBlockCount = [math]::ceiling($virtualScreenBounds.Height / $BlockSize)         
-
-    $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
-    $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter(
-        [System.Drawing.Imaging.Encoder]::Quality,
-        $Param.SafeHash.ViewerConfiguration.ImageCompressionQuality
-    )
-
-    $encoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' };
-
-    $SpaceGrid = New-Object IntPtr[][] $vertBlockCount, $horzBlockCount    
-
-    $firstIteration = $true
-
-    $bmpBlock = New-Object System.Drawing.Bitmap(
-        $BlockSize,
-        $BlockSize,
-        $bitmapPixelFormat
-    ) 
-
-    $desktopImage = New-Object System.Drawing.Bitmap(
-        $virtualScreenBounds.Width,
-        $virtualScreenBounds.Height,
-        $bitmapPixelFormat
-    )   
-
-    $graphics = [System.Drawing.Graphics]::FromImage($desktopImage)
-    $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
-    
-    if ($ResizeDesktop)
-    {
-        $fullSizeDesktop = New-Object System.Drawing.Bitmap(
-            $screen.Bounds.Width,
-            $screen.Bounds.Height,
-            $bitmapPixelFormat
-        )                   
-
-        $fullSizeDesktopGraphics = [System.Drawing.Graphics]::FromImage($fullSizeDesktop)              
-
-        if ($FastResize -and $ResizeDesktop)
-        {            
-            $graphics.InterpolationMode =  [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor     
-        }
-    }       
-
-    # SizeOf(DWORD) * 3 (SizeOf(Desktop) + SizeOf(Left) + SizeOf(Top))
-    $struct = New-Object -TypeName byte[] -ArgumentList (([Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])) * 3)
-
-    $blockRect = New-Object -TypeName System.Drawing.Rectangle
-
-    $topLeftBlock = [System.Drawing.Point]::Empty
-    $bottomRightBlock = [System.Drawing.Point]::Empty    
+    $mirrorDesktop_DC = [IntPtr]::Zero
+    $desktop_DC = [IntPtr]::Zero
+    $mirrorDesktop_hBmp = [IntPtr]::Zero
+    $spaceBlock_DC = [IntPtr]::Zero
+    $spaceBlock_hBmp = [IntPtr]::Zero
+    $dirtyRect_DC = [IntPtr]::Zero
+    $pBitmapInfoHeader = [IntPtr]::Zero
     try
-    {                    
+    {  
+        $BlockSize = [int]$Param.SafeHash.ViewerConfiguration.BlockSize
+        $packetSize = [int]$Param.SafeHash.ViewerConfiguration.PacketSize  
+        $compressionQuality = $Param.SafeHash.ViewerConfiguration.ImageCompressionQuality
+
+        $SRCCOPY = 0x00CC0020    
+        $DIB_RGB_COLORS = 0x0
+
+        $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object -FilterScript { 
+            $_.DeviceName -eq $Param.SafeHash.ViewerConfiguration.ScreenName 
+        }
+
+        if (-not $screen)
+        {
+            $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+        }
+
+        $screenBounds = $screen.Bounds
+
+        $SpaceGrid = $null
+        $horzBlockCount = [math]::ceiling($screenBounds.Width / $BlockSize)
+        $vertBlockCount = [math]::ceiling($screenBounds.Height / $BlockSize)         
+
+        $encoderParameters = New-Object System.Drawing.Imaging.EncoderParameters(1) 
+        $encoderParameters.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter(
+            [System.Drawing.Imaging.Encoder]::Quality,
+            $compressionQuality
+        )
+
+        $encoder = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' };
+
+        $SpaceGrid = New-Object IntPtr[][] $vertBlockCount, $horzBlockCount    
+
+        $firstIteration = $true
+
+        # Create our desktop mirror (For speeding up BitBlt calls)
+
+        [IntPtr] $desktop_DC = [User32]::GetWindowDC([User32]::GetDesktopWindow())
+        [IntPtr] $mirrorDesktop_DC = [GDI32]::CreateCompatibleDC($desktop_DC)
+
+        [IntPtr] $mirrorDesktop_hBmp = [GDI32]::CreateCompatibleBitmap(
+            $desktop_DC,
+            $screenBounds.Width,
+            $screenBounds.Height
+        )
+
+        $null = [GDI32]::SelectObject($mirrorDesktop_DC, $mirrorDesktop_hBmp)   
+
+        # Create our block of space for change detection
+
+        <#
+            typedef struct tagBITMAPINFOHEADER {
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x0        
+                DWORD biSize;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x4        
+                LONG  biWidth;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x8        
+                LONG  biHeight;
+
+                // x86-32|64: 0x2 Bytes | Padding = 0x0 | Offset: 0xc        
+                WORD  biPlanes;
+
+                // x86-32|64: 0x2 Bytes | Padding = 0x0 | Offset: 0xe      
+                WORD  biBitCount;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x10       
+                DWORD biCompression;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x14        
+                DWORD biSizeImage;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x18       
+                LONG  biXPelsPerMeter;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x1c       
+                LONG  biYPelsPerMeter;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x20       
+                DWORD biClrUsed;
+
+                // x86-32|64: 0x4 Bytes | Padding = 0x0 | Offset: 0x24       
+                DWORD biClrImportant;
+            } BITMAPINFOHEADER, *LPBITMAPINFOHEADER, *PBITMAPINFOHEADER; 
+
+            // x86-32|64 Struct Size: 0x28 (40 Bytes)
+        #>
+
+        $pBitmapInfoHeader = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(0x28)
+
+        # ZeroMemory
+        for ($i = 0; $i -lt $structSize; $i++)
+        {
+            [System.Runtime.InteropServices.Marshal]::WriteByte($pBitmapInfoHeader, $i, 0x0)    
+        }
+
+        [System.Runtime.InteropServices.Marshal]::WriteInt32($pBitmapInfoHeader, 0x0, 0x28) # biSize
+        [System.Runtime.InteropServices.Marshal]::WriteInt32($pBitmapInfoHeader, 0x4, $BlockSize) # biWidth
+        [System.Runtime.InteropServices.Marshal]::WriteInt32($pBitmapInfoHeader, 0x8, $BlockSize) # biHeight
+        [System.Runtime.InteropServices.Marshal]::WriteInt16($pBitmapInfoHeader, 0xc, 0x1) # biPlanes
+        [System.Runtime.InteropServices.Marshal]::WriteInt16($pBitmapInfoHeader, 0xe, 0x20) # biBitCount
+        
+        [IntPtr] $spaceBlock_DC = [GDI32]::CreateCompatibleDC(0)
+        [IntPtr] $spaceBlock_Ptr = [IntPtr]::Zero
+
+        [IntPtr] $spaceBlock_hBmp = [GDI32]::CreateDIBSection(
+            $spaceBlock_DC,
+            $pBitmapInfoHeader,
+            $DIB_RGB_COLORS,
+            [ref] $spaceBlock_Ptr,
+            [IntPtr]::Zero,
+            0
+        )
+
+        $null = [GDI32]::SelectObject($spaceBlock_DC, $spaceBlock_hBmp)
+
+        # Create our dirty rect DC
+        $dirtyRect_DC = [GDI32]::CreateCompatibleDC(0)
+
+        # SizeOf(DWORD) * 3 (SizeOf(Desktop) + SizeOf(Left) + SizeOf(Top))
+        $sizeOfUInt32 = [Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])
+        $struct = New-Object -TypeName byte[] -ArgumentList ($sizeOfUInt32 * 3)
+
+        $blockRect = New-Object -TypeName System.Drawing.Rectangle
+
+        $topLeftBlock = [System.Drawing.Point]::Empty
+        $bottomRightBlock = [System.Drawing.Point]::Empty   
+
+        $blockMemSize = ((($BlockSize * 32) + 32) -band -bnot 32) / 8
+        $blockMemSize *= $BlockSize 
+        $ptrBlockMemSize = [IntPtr]::New($blockMemSize)
+            
+        $fps = 0 # TODO Remove  
+        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew() # TODO Remove
+
         while ($Param.SafeHash.SessionActive)
         {      
-            if ($ResizeDesktop)
-            {                  
-                try
-                {           
-                    $fullSizeDesktopGraphics.CopyFromScreen(
-                        $screen.Bounds.Location,
-                        [System.Drawing.Point]::Empty,
-                        [System.Drawing.Size]::New(
-                            $fullSizeDesktop.Width,
-                            $fullSizeDesktop.Height
-                        ),
-                        [System.Drawing.CopyPixelOperation]::SourceCopy
-                    )
-                }
-                catch
-                {
-                    continue
-                }
-
-                $graphics.DrawImage(
-                    $fullSizeDesktop,
-                    0,
-                    0,
-                    $virtualScreenBounds.Width,
-                    $virtualScreenBounds.Height
-                )
-            }
-            else
-            {
-                try
-                {
-                    $graphics.CopyFromScreen(
-                        $screen.Bounds.Location,
-                        [System.Drawing.Point]::Empty,
-                        [System.Drawing.Size]::New(
-                            $virtualScreenBounds.Width,
-                            $virtualScreenBounds.Height
-                        ),
-                        [System.Drawing.CopyPixelOperation]::SourceCopy
-                    )
-                }
-                catch
-                {
-                    continue
-                }
-            }            
-
+            # Refresh our desktop mirror
+            $null = [GDI32]::BitBlt(
+                $mirrorDesktop_DC,
+                0,
+                0,
+                $screenBounds.Width,    
+                $screenBounds.Height,
+                $desktop_DC,
+                $screenBounds.Location.X,
+                $screenBounds.Location.Y,
+                $SRCCOPY
+            )            
+                
             $updated = $false
 
             for ($y = 0; $y -lt $vertBlockCount; $y++)    
             {                             
                 for ($x = 0; $x -lt $horzBlockCount; $x++)
-                {                                           
-                    $blockRect.X = ($x * $BlockSize)
-                    $blockRect.Y = ($y * $BlockSize)
-                    $blockRect.Width = $BlockSize
-                    $blockRect.Height = $BlockSize
-
-                    if (
-                        # Intersecting consume some time, only intersect if required.
-                        $blockRect.Right -gt $virtualScreenBounds.Width -or
-                        $blockRect.Bottom -gt $virtualScreenBounds.Height
-                    )
-                    {
-                        $blockRect.Intersect($virtualScreenBounds)   
-                    }
-                        
-                    $bmpBlock = $desktopImage.Clone($blockRect, $bitmapPixelFormat)
-
-                    $blockRect.X = 0
-                    $blockRect.Y = 0
-
-                    $bmpBlockData = $bmpBlock.LockBits(
-                        $blockRect, 
-                        [System.Drawing.Imaging.ImageLockMode]::WriteOnly,
-                        $bitmapPixelFormat
-                    )
-                    try
-                    {
-                        $blockMemSize = ($bmpBlockData.Stride * $bmpBlock.Height)
-                        $ptrBlockMemSize = [IntPtr]::New($blockMemSize)
-
-                        if ($firstIteration)
-                        {
-                            # Big bang occurs, tangent univers is getting created, where is Donnie?
-                            $SpaceGrid[$y][$x] = [Runtime.InteropServices.Marshal]::AllocHGlobal($blockMemSize)
-                                                                                                    
-                            [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $ptrBlockMemSize)                        
-                        }
-                        else
-                        {                                                                        
-                            if ([MSVCRT]::memcmp($bmpBlockData.Scan0, $SpaceGrid[$y][$x], $ptrBlockMemSize) -ne [IntPtr]::Zero)
-                            {
-                                [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $bmpBlockData.Scan0, $ptrBlockMemSize) 
+                {                                                                       
+                    $null = [GDI32]::BitBlt(
+                        $spaceBlock_DC,
+                        0,
+                        0,
+                        $BlockSize,
+                        $BlockSize,
+                        $mirrorDesktop_DC,
+                        ($x * $BlockSize),
+                        ($y * $BlockSize),
+                        $SRCCOPY
+                    );
                                 
-                                if (-not $updated)
-                                {                  
-                                    # Initialize with the first dirty block coordinates                  
-                                    $topLeftBlock.X = $x
-                                    $topLeftBlock.Y = $y
-
-                                    $bottomRightBlock = $topLeftBlock
-
-                                    $updated = $true
-                                }
-                                else
-                                {    
-                                    if ($x -lt $topLeftBlock.X)
-                                    {
-                                        $topLeftBlock.X = $x
-                                    }
-
-                                    if ($y -lt $topLeftBlock.Y)
-                                    {
-                                        $topLeftBlock.Y = $y
-                                    }
-
-                                    if ($x -gt $bottomRightBlock.X)
-                                    {
-                                        $bottomRightBlock.X = $x
-                                    }
-
-                                    if ($y -gt $bottomRightBlock.Y)
-                                    {
-                                        $bottomRightBlock.Y = $y
-                                    }   
-                                }                                                              
-                            }                        
-                        }
-                    }
-                    finally
+                    if ($firstIteration)
                     {
-                        if ($bmpBlockData)
+                        # Big bang occurs, tangent univers is getting created, where is Donnie?
+                        $SpaceGrid[$y][$x] = [Runtime.InteropServices.Marshal]::AllocHGlobal($blockMemSize)
+                                                                                                
+                        [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $spaceBlock_Ptr, $ptrBlockMemSize)                        
+                    }
+                    else
+                    {                                                                        
+                        if ([MSVCRT]::memcmp($spaceBlock_Ptr, $SpaceGrid[$y][$x], $ptrBlockMemSize) -ne [IntPtr]::Zero)
                         {
-                            $bmpBlock.UnlockBits($bmpBlockData)
-                        }
-                    }                               
+                            [Kernel32]::CopyMemory($SpaceGrid[$y][$x], $spaceBlock_Ptr, $ptrBlockMemSize) 
+                            
+                            if (-not $updated)
+                            {                  
+                                # Initialize with the first dirty block coordinates                  
+                                $topLeftBlock.X = $x
+                                $topLeftBlock.Y = $y
+
+                                $bottomRightBlock = $topLeftBlock
+
+                                $updated = $true
+                            }
+                            else
+                            {    
+                                if ($x -lt $topLeftBlock.X)
+                                {
+                                    $topLeftBlock.X = $x
+                                }
+
+                                if ($y -lt $topLeftBlock.Y)
+                                {
+                                    $topLeftBlock.Y = $y
+                                }
+
+                                if ($x -gt $bottomRightBlock.X)
+                                {
+                                    $bottomRightBlock.X = $x
+                                }
+
+                                if ($y -gt $bottomRightBlock.Y)
+                                {
+                                    $bottomRightBlock.Y = $y
+                                }   
+                            }                                                              
+                        }                        
+                    }                                             
                 }                            
             }     
             
             if ($firstIteration)
             {
                 # Send the full desktop if we are in the first iteration
-                $updatedRect = $virtualScreenBounds
+                $dirtyRect = $screenBounds
             } 
             elseif ($updated)
             {                
                 # Create new updated rectangle pointing to the dirty region (since last snapshot)
-                $updatedRect.X = $topLeftBlock.X * $BlockSize
-                $updatedRect.Y = $topLeftBlock.Y * $BlockSize
+                $dirtyRect.X = $topLeftBlock.X * $BlockSize
+                $dirtyRect.Y = $topLeftBlock.Y * $BlockSize
 
-                $updatedRect.Width = (($bottomRightBlock.X * $BlockSize) + $BlockSize) - $updatedRect.Left
-                $updatedRect.Height = (($bottomRightBlock.Y * $BlockSize) + $BlockSize) - $updatedRect.Top                
+                $dirtyRect.Width = (($bottomRightBlock.X * $BlockSize) + $BlockSize) - $dirtyRect.Left
+                $dirtyRect.Height = (($bottomRightBlock.Y * $BlockSize) + $BlockSize) - $dirtyRect.Top                
             }            
             
-            if (-not $updatedRect.IsEmpty -and $desktopImage)
+            if (-not $dirtyRect.IsEmpty)
             {                           
                 try
                 {
-                    $updatedRect = [System.Drawing.Rectangle]::Intersect($updatedRect, $virtualScreenBounds)
+                    $dirtyRect_hBmp = [GDI32]::CreateCompatibleBitmap(
+                        $mirrorDesktop_DC,
+                        $dirtyRect.Width,
+                        $dirtyRect.Height
+                    )
 
-                    $updatedDesktop = $desktopImage.Clone(
-                        $updatedRect,
-                        $bitmapPixelFormat
-                    )    
+                    $null = [GDI32]::SelectObject($dirtyRect_DC, $dirtyRect_hBmp)
+
+                    $null = [GDI32]::BitBlt(
+                        $dirtyRect_DC,
+                        0,
+                        0,
+                        $dirtyRect.Width,
+                        $dirtyRect.Height,
+                        $mirrorDesktop_DC,
+                        $dirtyRect.X,
+                        $dirtyRect.Y,
+                        $SRCCOPY
+                    )
+
+                    # Find a faster alternative
+                    [System.Drawing.Bitmap] $updatedDesktop = [System.Drawing.Image]::FromHBitmap($dirtyRect_hBmp) 
                 
-                    $desktopStream = New-Object System.IO.MemoryStream
+                    $desktopStream = New-Object System.IO.MemoryStream                
 
                     $updatedDesktop.Save($desktopStream, $encoder, $encoderParameters)                                 
 
                     $desktopStream.Position = 0
+                    
                     try 
                     {         
                         # One call please  
                         [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x0, $desktopStream.Length)
-                        [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x4, $updatedRect.Left)
-                        [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x8, $updatedRect.Top)
+                        [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x4, $dirtyRect.Left)
+                        [System.Runtime.InteropServices.Marshal]::WriteInt32($struct, 0x8, $dirtyRect.Top)
 
                         $Param.Client.SSLStream.Write($struct , 0, $struct.Length)   
-              
+                
                         $binaryReader = New-Object System.IO.BinaryReader($desktopStream)
                         do
                         {       
@@ -1107,12 +1174,17 @@ $global:DesktopStreamScriptBlock = {
                 }
                 finally
                 {
+                    if ($dirtyRect_hBmp -ne [IntPtr]::Zero)
+                    {
+                        $null = [GDI32]::DeleteObject($dirtyRect_hBmp)
+                    }
+
                     if ($desktopStream)
                     {
                         $desktopStream.Dispose()
-                    }
+                    }   
 
-                    if ($updatedDesktop)
+                    if ($updatedDesktop)             
                     {
                         $updatedDesktop.Dispose()
                     }
@@ -1123,33 +1195,55 @@ $global:DesktopStreamScriptBlock = {
             {
                 $firstIteration = $false
             }
+
+            # TODO Remove Begin
+            $fps++
+            if ($Stopwatch.ElapsedMilliseconds -ge 1000)
+            {
+                $HostSyncHash.host.ui.WriteLine($fps)
+                $fps = 0
+
+                $Stopwatch.Restart()
+            }
+            # TODO Remove End
         }
     }
     finally
-    {        
-        if ($graphics)
+    {       
+        # Free allocated resources 
+        if ($mirrorDesktop_DC -ne [IntPtr]::Zero)
         {
-            $graphics.Dispose()
+            $null = [GDI32]::DeleteDC($mirrorDesktop_DC)
         }
 
-        if ($desktopImage)
+        if ($desktop_DC -ne [IntPtr]::Zero)
         {
-            $desktopImage.Dispose()
+            $null = [User32]::ReleaseDC([User32]::GetDesktopWindow(), $desktop_DC)    
         }
 
-        if ($fullSizeDesktopGraphics)
+        if ($mirrorDesktop_hBmp -ne [IntPtr]::Zero)
         {
-            $fullSizeDesktopGraphics.Dispose()
+            $null = [GDI32]::DeleteObject($mirrorDesktop_hBmp)
+        }     
+
+        if ($spaceBlock_DC -ne [IntPtr]::Zero)      
+        {
+            $null = [GDI32]::DeleteDC($spaceBlock_DC)
         }
 
-        if ($fullSizeDesktop)
+        if ($spaceBlock_hBmp -ne [IntPtr]::Zero)
         {
-            $fullSizeDesktop.Dispose()
-        }        
+            $null = [GDI32]::DeleteObject($spaceBlock_hBmp)
+        }
 
-        if ($bmpBlock)
+        if ($dirtyRect_DC -ne [IntPtr]::Zero)
         {
-            $bmpBlock.Dispose()
+            $null = [GDI32]::DeleteDC($dirtyRect_DC)
+        }
+
+        if ($pBitmapInfoHeader -ne [IntPtr]::Zero)
+        {
+            [System.Runtime.InteropServices.Marshal]::FreeHGlobal($pBitmapInfoHeader)
         }
 
         # Tangent univers big crunch
@@ -1160,7 +1254,7 @@ $global:DesktopStreamScriptBlock = {
                 [Runtime.InteropServices.Marshal]::FreeHGlobal($SpaceGrid[$y][$x])           
             }
         }
-    }  
+    }
 }
 
 $global:IngressEventScriptBlock = {    
