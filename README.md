@@ -525,7 +525,7 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * Desktop streaming improvement to gain few more FPS.
 * Support password-protected external x509 Certificates.
 
-### X March 2022 (4.0.0)
+### 10 March 2022 (4.0.0)
 
 * Huge desktop streaming optimization, FPS rate increased by 65% (even more if tuning BlockSize)
 * Desktop resize is now made viewer-side and automatically to simplify the code and efficiency.
