@@ -47,11 +47,11 @@ Add-Type @"
     public static class User32 
     {
         [DllImport("User32.dll")] 
-        public static extern bool SetProcessDPIAware();    
+        public static extern bool SetProcessDPIAware();   
     }    
 "@
 
-$global:PowerRemoteDesktopVersion = "3.1.2"
+$global:PowerRemoteDesktopVersion = "4.0.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -78,6 +78,8 @@ enum ProtocolCommand {
     BadRequest = 5
     ResourceFound = 6
     ResourceNotFound = 7
+    LogonUIAccessDenied = 8
+    LogonUIWrongSession = 9
 }
 
 enum WorkerKind {
@@ -725,6 +727,8 @@ class ClientIO {
 class ViewerConfiguration
 {
     [bool] $RequireResize = $false    
+    [int] $RemoteDesktopWidth = 0
+    [int] $RemoteDesktopHeight = 0
     [int] $VirtualDesktopWidth = 0
     [int] $VirtualDesktopHeight = 0
     [int] $ScreenX_Delta = 0
@@ -746,7 +750,7 @@ class ViewerSession
     [int] $ResizeRatio = 0
     [PacketSize] $PacketSize = [PacketSize]::Size9216
     [BlockSize] $BlockSize = [BlockSize]::Size64
-    [bool] $FastResize = $false
+    [bool] $LogonUI = $false
 
     [ClientIO] $ClientDesktop = $null
     [ClientIO] $ClientEvents = $null
@@ -895,7 +899,10 @@ class ViewerSession
             $localScreenWidth = Get-LocalScreenWidth
             $localScreenHeight = (Get-LocalScreenHeight) - (Get-WindowCaptionHeight)
 
-            $this.ViewerConfiguration = [ViewerConfiguration]::New()                 
+            $this.ViewerConfiguration = [ViewerConfiguration]::New()    
+
+            $this.ViewerConfiguration.RemoteDesktopWidth = $selectedScreen.Width             
+            $this.ViewerConfiguration.RemoteDesktopHeight = $selectedScreen.Height
 
             # If remote screen is bigger than local screen, we will resize remote screen to fit 90% of local screen.
             # Supports screen orientation (Horizontal / Vertical)
@@ -941,22 +948,19 @@ class ViewerSession
             $this.ViewerConfiguration.ScreenX_Delta = $selectedScreen.X
             $this.ViewerConfiguration.ScreenY_Delta = $selectedScreen.Y
 
+            if ($this.ViewerConfiguration.RequireResize)
+            {            
+                $this.ViewerConfiguration.ScreenX_Ratio = $selectedScreen.Width / $this.ViewerConfiguration.VirtualDesktopWidth
+                $this.ViewerConfiguration.ScreenY_Ratio = $selectedScreen.Height / $this.ViewerConfiguration.VirtualDesktopHeight                
+            } 
+
             $viewerExpectation = New-Object PSCustomObject -Property @{    
                 ScreenName = $selectedScreen.Name 
                 ImageCompressionQuality = $this.ImageCompressionQuality
                 PacketSize = $this.PacketSize
                 BlockSize = $this.BlockSize
-                FastResize = $this.FastResize           
-            }
-
-            if ($this.ViewerConfiguration.RequireResize)
-            {
-                $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopWidth" -Value $this.ViewerConfiguration.VirtualDesktopWidth
-                $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopHeight" -Value $this.ViewerConfiguration.VirtualDesktopHeight
-
-                $this.ViewerConfiguration.ScreenX_Ratio = $selectedScreen.Width / $this.ViewerConfiguration.VirtualDesktopWidth
-                $this.ViewerConfiguration.ScreenY_Ratio = $selectedScreen.Height / $this.ViewerConfiguration.VirtualDesktopHeight                
-            }            
+                LogonUI = $this.LogonUI                       
+            }                       
 
             Write-Verbose "@ViewerExpectation:"
             Write-Verbose $viewerExpectation
@@ -964,10 +968,34 @@ class ViewerSession
 
             $client.WriteJson($viewerExpectation)
 
-            if ($client.ReadLine(5 * 1000) -cne [ProtocolCommand]::Success)
+            switch ([ProtocolCommand] $client.ReadLine(5 * 1000))
             {
-                throw "Remote server did not respond to our expectation in time."
-            }
+                ([ProtocolCommand]::Success)
+                {
+                    break
+                }    
+
+                ([ProtocolCommand]::LogonUIAccessDenied)
+                {
+                    throw "Could not access LogonUI / Winlogon desktop.`r`n" +
+                          "To access LogonUI desktop, you must have ""NT AUTHORITY/System"" privilege in current active session."
+
+                    break
+                }
+
+                ([ProtocolCommand]::LogonUIWrongSession)
+                {
+                    throw "Could not access LogonUI / Winlogon desktop.`r`n"
+                          "To access LogonUI desktop, server process must be running under active Windows Session."  
+
+                    break
+                }
+
+                default
+                {
+                    throw "Remote server did not acknoledged our expectation in time."
+                }
+            }            
         } 
         catch
         {            
@@ -1100,7 +1128,7 @@ class ViewerSession
 $global:VirtualDesktopUpdaterScriptBlock = {   
     try
     {       
-        $packetSize = 9216 # 9KiB        
+        $packetSize = [int]$Param.packetSize        
 
         # SizeOf(DWORD) * 3 (SizeOf(Desktop) + SizeOf(Left) + SizeOf(Top))
         $struct = New-Object -TypeName byte[] -ArgumentList (([Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])) * 3)
@@ -1111,6 +1139,26 @@ $global:VirtualDesktopUpdaterScriptBlock = {
         $sceneGraphics = $null
 
         $destPoint = [System.Drawing.Point]::New(0, 0)
+
+        $scene = [System.Drawing.Bitmap]::New(
+            $Param.ViewerConfiguration.RemoteDesktopWidth,
+            $Param.ViewerConfiguration.RemoteDesktopHeight
+        )
+
+        $sceneGraphics = [System.Drawing.Graphics]::FromImage($scene)                            
+        $sceneGraphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy  
+
+        $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene # Assign our scene
+
+        # Wait until the virtual desktop form is shown to user desktop.
+        while (-not $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.Visible)
+        {
+            Start-Sleep -Milliseconds 100
+        }
+
+        # Tiny hack to correctly bring to front window, this is the most effective technique so far.
+        $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.TopMost = $true        
+        $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.TopMost = $false
 
         while ($true)
         {                              
@@ -1140,34 +1188,20 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 {
                     continue
                 }
+                                             
+                # Next Iterations
+                $sceneGraphics.DrawImage(
+                    [System.Drawing.Image]::FromStream($stream),
+                    $destPoint
+                )                        
                 
-                if (-not $scene)
-                {
-                    # First Iteration                
-                    $scene = [System.Drawing.Image]::FromStream($stream)
-
-                    $sceneGraphics = [System.Drawing.Graphics]::FromImage($scene)                    
-                    $sceneGraphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy  
-
-                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene
-                } 
-                else
-                {   
-                    # Next Iterations
-                    $sceneGraphics.DrawImage(
-                        [System.Drawing.Image]::FromStream($stream),
-                        $destPoint
-                    )                        
-                    
-                    $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Invalidate()
-                }                                    
+                $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Invalidate()              
             }
             catch 
             {              
                 break
-            }                              
+            }                            
         }
-
     }
     finally
     {        
@@ -1214,7 +1248,9 @@ $global:IngressEventScriptBlock = {
     enum InputEvent {
         KeepAlive = 0x1
         MouseCursorUpdated = 0x2 
-        ClipboardUpdated = 0x3         
+        ClipboardUpdated = 0x3
+        DesktopActive = 0x4
+        DesktopInactive = 0x5         
     }    
 
     enum ClipboardMode {
@@ -1295,6 +1331,18 @@ $global:IngressEventScriptBlock = {
                 $HostSyncHash.ClipboardText = $aEvent.Text
 
                 Set-Clipboard -Value $aEvent.Text
+
+                break
+            }
+
+            ([InputEvent]::DesktopActive)
+            {                
+                break
+            }
+
+            ([InputEvent]::DesktopInactive)
+            {                
+                break
             }
         }
     }    
@@ -1478,10 +1526,11 @@ function New-VirtualDesktopForm
     $form.Text = $Caption
     $form.KeyPreview = $true # Necessary to capture keystrokes.
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-    $form.MaximizeBox = $false        
+    $form.MaximizeBox = $false            
 
     $pictureBox = New-Object System.Windows.Forms.PictureBox
-    $pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill    
+    $pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::StretchImage    
 
     $form.Controls.Add($pictureBox)    
 
@@ -1646,14 +1695,12 @@ function Invoke-RemoteDesktopViewer
                 Size96  -> 96x96
                 Size128 -> 128x128
                 Size256	-> 256x256
-                Size512	-> 512x512
+                Size512	-> 512x512        
 
-        .PARAMETER FastResize
+        .PARAMETER LogonUI
             Type: Switch
             Default: None
-            Description:
-                Control the quality of remote desktop resize (smoothing) if applicable.
-                If you lack of network speed, this option is recommended.
+            Description: Request server to open LogonUI / Winlogon desktop insead of default user desktop (Requires SYSTEM privilege in active session).
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
@@ -1684,7 +1731,7 @@ function Invoke-RemoteDesktopViewer
         [switch] $AlwaysOnTop,
         [PacketSize] $PacketSize = [PacketSize]::Size9216,
         [BlockSize] $BlockSize = [BlockSize]::Size64,
-        [switch] $FastResize = $false
+        [switch] $LogonUI
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1733,7 +1780,7 @@ function Invoke-RemoteDesktopViewer
             $session.ImageCompressionQuality = $ImageCompressionQuality
             $session.PacketSize = $PacketSize
             $session.BlockSize = $BlockSize
-            $session.FastResize = $FastResize
+            $session.LogonUI = $LogonUI
 
             if ($Resize)
             {
@@ -1752,11 +1799,12 @@ function Invoke-RemoteDesktopViewer
 
             Write-Verbose "Create WinForms Environment..."            
 
+            $virtualDesktop = New-VirtualDesktopForm
             $virtualDesktopSyncHash = [HashTable]::Synchronized(@{
-                VirtualDesktop = New-VirtualDesktopForm
+                VirtualDesktop = $virtualDesktop
             })            
 
-            $virtualDesktopSyncHash.VirtualDesktop.Form.Text = [string]::Format(
+            $virtualDesktop.Form.Text = [string]::Format(
                 "Power Remote Desktop v{0}: {1}/{2} - {3}", 
                 $global:PowerRemoteDesktopVersion,
                 $session.ServerInformation.Username,
@@ -1765,7 +1813,7 @@ function Invoke-RemoteDesktopViewer
             )
 
             # Size Virtual Desktop Form Window
-            $virtualDesktopSyncHash.VirtualDesktop.Form.ClientSize = [System.Drawing.Size]::New(
+            $virtualDesktop.Form.ClientSize = [System.Drawing.Size]::New(
                 $session.ViewerConfiguration.VirtualDesktopWidth, 
                 $session.ViewerConfiguration.VirtualDesktopHeight
             )                                   
@@ -1894,7 +1942,7 @@ function Invoke-RemoteDesktopViewer
                             Description: The type of mouse event (Example: Move, Click)
 
                         .PARAMETER Button
-                            Type: Integer
+                            Type: String
                             Default: None
                             Description: The pressed button on mouse (Example: Left, Right, Middle)
 
@@ -1928,7 +1976,7 @@ function Invoke-RemoteDesktopViewer
                         $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress)) 
                     }  
                     catch
-                    {}                 
+                    {}               
                 }
 
                 function Send-VirtualKeyboard
@@ -1950,7 +1998,7 @@ function Invoke-RemoteDesktopViewer
                         [Parameter(Mandatory=$True)]
                         [string] $KeyChain
                     )
-
+                    
                     $aEvent = (New-KeyboardEvent -Keys $KeyChain)                                
 
                     try
@@ -1958,10 +2006,10 @@ function Invoke-RemoteDesktopViewer
                         $outputEventSyncHash.Writer.WriteLine(($aEvent  | ConvertTo-Json -Compress)) 
                     }
                     catch
-                    {}
+                    {}                    
                 }
 
-                $virtualDesktopSyncHash.VirtualDesktop.Form.Add_KeyPress(
+                $virtualDesktop.Form.Add_KeyPress(
                     { 
                         if ($_.KeyChar)
                         {
@@ -1986,23 +2034,27 @@ function Invoke-RemoteDesktopViewer
                     }
                 )
 
-                $virtualDesktopSyncHash.VirtualDesktop.Form.Add_Shown(
+                $virtualDesktop.Form.Add_Shown(
                     {
                         # Center Virtual Desktop Form
-                        $virtualDesktopSyncHash.VirtualDesktop.Form.Location = [System.Drawing.Point]::New(
-                            ((Get-LocalScreenWidth) - $virtualDesktopSyncHash.VirtualDesktop.Form.Width) / 2,
-                            ((Get-LocalScreenHeight) - $virtualDesktopSyncHash.VirtualDesktop.Form.Height) / 2
+                        $virtualDesktop.Form.Location = [System.Drawing.Point]::New(
+                            ((Get-LocalScreenWidth) - $virtualDesktop.Form.Width) / 2,
+                            ((Get-LocalScreenHeight) - $virtualDesktop.Form.Height) / 2
                         ) 
 
-                        $virtualDesktopSyncHash.VirtualDesktop.Form.TopMost = $AlwaysOnTop
+                        $virtualDesktop.Form.TopMost = $AlwaysOnTop
                     }
                 )
 
-                $virtualDesktopSyncHash.VirtualDesktop.Form.Add_KeyDown(
+                $virtualDesktop.Form.Add_KeyDown(
                     {                       
                         $result = ""
+
                         switch ($_.KeyValue)
                         {
+                            # WIN Key
+                            91 { $result = "^{ESC}" }
+
                             # F Keys
                             112 { $result = "{F1}" }
                             113 { $result = "{F2}" }
@@ -2046,25 +2098,25 @@ function Invoke-RemoteDesktopViewer
                     }
                 )                        
 
-                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseDown(
+                $virtualDesktop.Picture.Add_MouseDown(
                     {                         
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type ([MouseState]::Down)
                     }
                 )
 
-                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseUp(
+                $virtualDesktop.Picture.Add_MouseUp(
                     { 
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type ([MouseState]::Up)
                     }
                 )
 
-                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseMove(
+                $virtualDesktop.Picture.Add_MouseMove(
                     { 
                         Send-VirtualMouse -X $_.X -Y $_.Y -Button $_.Button -Type ([MouseState]::Move)
                     }
                 )          
 
-                $virtualDesktopSyncHash.VirtualDesktop.Picture.Add_MouseWheel(
+                $virtualDesktop.Picture.Add_MouseWheel(
                     {
                         $aEvent = New-Object PSCustomObject -Property @{
                             Id = [OutputEvent]::MouseWheel
@@ -2078,13 +2130,15 @@ function Invoke-RemoteDesktopViewer
                         catch {}
                     }
                 )  
-            }
+            }            
 
             Write-Verbose "Create runspace for desktop streaming..."            
 
             $param = New-Object -TypeName PSCustomObject -Property @{
                 Client = $session.ClientDesktop
-                VirtualDesktopSyncHash = $virtualDesktopSyncHash                                        
+                VirtualDesktopSyncHash = $virtualDesktopSyncHash
+                ViewerConfiguration = $session.ViewerConfiguration
+                PacketSize = $session.PacketSize                
             }
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:VirtualDesktopUpdaterScriptBlock -Param $param)  
@@ -2101,7 +2155,6 @@ function Invoke-RemoteDesktopViewer
             $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)  
             $runspaces.Add($newRunspace)
 
-
             Write-Verbose "Create runspace for outgoing events..."
 
             $param = New-Object -TypeName PSCustomObject -Property @{                
@@ -2114,7 +2167,7 @@ function Invoke-RemoteDesktopViewer
 
             Write-Verbose "Done. Showing Virtual Desktop Form."                       
 
-            $null = $virtualDesktopSyncHash.VirtualDesktop.Form.ShowDialog()
+            $null = $virtualDesktop.Form.ShowDialog()
         }
         finally
         {                
@@ -2137,9 +2190,9 @@ function Invoke-RemoteDesktopViewer
             }    
             $runspaces.Clear() 
 
-            if ($virtualDesktopSyncHash.VirtualDesktop)
+            if ($virtualDesktop)
             {            
-                $virtualDesktopSyncHash.VirtualDesktop.Form.Dispose()
+                $virtualDesktop.Form.Dispose()
             }      
             
             Write-Host "Remote desktop session has ended."

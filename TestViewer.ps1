@@ -14,7 +14,7 @@ $password = "Jade@123@Pwd"
 Write-Host "Scenarios"
 Write-Host "---------------"
 Write-Host "1. Classic (Secure Password)"
-Write-Host "2. Classic (Plain-text password)"
+Write-Host "2. Classic (Plain-text password) + LogonUI"
 Write-Host "3. Always On Top, Disable Verbosity"
 Write-Host "4. TLS v1.3"
 Write-Host "5. Clipboard Receive"
@@ -23,7 +23,7 @@ Write-Host "7. Clipboard Disabled"
 Write-Host "8. Image Quality Really Bad"
 Write-Host "9. Image Quality Bad"
 Write-Host "10. Image Quality High"
-Write-Host "11. Resize 10% + Bad Resize Quality (FastResize)"
+Write-Host "11. Resize 10%"
 Write-Host "12. Resize 80%, Packet Size 16KiB, BlockSize 128x128"
 Write-Host "13. Bad Password"
 
@@ -35,7 +35,7 @@ switch ($scenario)
 {
     2 
     { 
-        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost 
+        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -LogonUI
     }  
 
     3 
@@ -100,7 +100,7 @@ switch ($scenario)
         Write-Host "⚡Check if desktop image is reduced by 10%."
         Write-Host "⚡Check if resize quality is bad."
 
-        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 90 -FastResize
+        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 90
     }
 
     12 

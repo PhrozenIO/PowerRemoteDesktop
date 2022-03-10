@@ -17,7 +17,7 @@ Tested on:
 * **Windows 10**
 * **Windows 11**
 
-Current version: **3.1.2 Stable**
+Current version: **4.0.0 Stable**
 
 ## Performance
 
@@ -245,7 +245,7 @@ Create a new remote desktop session with a Power Remote Desktop Server.
 | AlwaysOnTop             | Switch           | False      | If present, virtual desktop form will be above all other window's |
 | PacketSize              | Enum             | Size9216   | Define the network packet size for streams. Choose the packet size accordingly to your network constrainsts. |
 | BlockSize               | Enum             | Size64     | Define the screen grid block size. Choose the block size accordingly to remote screen size / computer constrainsts (CPU / Network) |
-| FastResize              | Switch           | False      | Control the quality of remote desktop resize (smoothing) if applicable. If you lack of network speed, this option is recommended. |
+| LogonUI                 | Switch           | False      | Request server to open LogonUI / Winlogon desktop insead of default user desktop (Requires SYSTEM privilege in active session). |
 
 ##### Clipboard Mode Enum Properties
 
@@ -385,6 +385,32 @@ Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePass
 Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force) -CertificateFile "c:\certs\phrozen.p12"
 ```
 
+#### How to capture LogonUI
+
+Since version 4.0.0, it is possible to capture **LogonUI** / **Winlogon** (UAC Prompt, Windows Login Window, CTRL+ALT+DEL etc...).
+
+⚠️ To be able to capture LogonUI, you must run your server under the context of **NT AUTHORITY/System** in the current active session.
+
+Multiple methods exists to spawn a process as **SYSTEM User** under active session (Ex: PsExec, Process Hacker)
+
+For simplicity I recommend using one of my other projects called [PowerRunAsSystem](https://github.com/DarkCoderSc/PowerRunAsSystem) 
+
+You can install this module using your favorite method, for example with PowerShell Gallery
+
+````powershell
+Install-Module -Name PowerRunAsSystem
+````
+
+Then run bellow command as Administrator.
+
+```powershell
+Invoke-InteractiveSystemPowerShell
+```
+
+A new PowerShell terminal should appear on your desktop as **NT AUTHORITY/System**
+
+You can now enter your Power Remote Desktop server command, future Power Remote Desktop viewer will now be able to use the option `LogonUI` to request LogonUI / Winlogon desktop on active session.
+
 #### Generate and pass your own X509 Certificate
 
 ⚠️ Remember that not using your own X509 certificate will result in requiring administrator privilege to create a new server.
@@ -498,6 +524,16 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * Code refactoring and improvement.
 * Desktop streaming improvement to gain few more FPS.
 * Support password-protected external x509 Certificates.
+
+### 10 March 2022 (4.0.0)
+
+* Huge desktop streaming optimization, FPS rate increased by 65% (even more if tuning BlockSize)
+* Desktop resize is now made viewer-side and automatically to simplify the code and efficiency.
+* FastResize option is not required anymore.
+* Various code optimization / fix.
+* WIN Keyboard Key supported.
+* Virtual Desktop window opens above the terminal.
+* Server now support LogonUI / Winlogon (Beta)
 
 ### List of ideas and TODO
 
