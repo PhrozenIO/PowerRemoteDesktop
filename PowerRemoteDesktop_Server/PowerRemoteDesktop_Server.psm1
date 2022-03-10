@@ -70,6 +70,27 @@ Add-Type @"
 
         [DllImport("user32.dll")]
         public static extern IntPtr GetDesktopWindow();
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern IntPtr OpenDesktop(
+            [MarshalAs(UnmanagedType.LPTStr)] string DesktopName,
+            uint Flags,
+            bool Inherit,
+            uint Access
+        );
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetThreadDesktop(
+            IntPtr hDesktop
+        );
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool CloseDesktop(
+            IntPtr hDesktop
+        );    
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr GetForegroundWindow();
     }    
 
     public static class Kernel32
@@ -163,6 +184,8 @@ enum ProtocolCommand {
     BadRequest = 5
     ResourceFound = 6
     ResourceNotFound = 7
+    LogonUIAccessDenied = 8
+    LogonUIWrongSession = 9
 }
 
 enum WorkerKind {
@@ -1022,7 +1045,7 @@ $global:DesktopStreamScriptBlock = {
         while ($Param.SafeHash.SessionActive)
         {      
             # Refresh our desktop mirror
-            $null = [GDI32]::BitBlt(
+            $result = [GDI32]::BitBlt(
                 $mirrorDesktop_DC,
                 0,
                 0,
@@ -1032,7 +1055,12 @@ $global:DesktopStreamScriptBlock = {
                 $screenBounds.Location.X,
                 $screenBounds.Location.Y,
                 $SRCCOPY
-            )            
+            )        
+
+            if (-not $result)
+            {
+                continue
+            }
                 
             $updated = $false
 
@@ -1136,7 +1164,7 @@ $global:DesktopStreamScriptBlock = {
                         $SRCCOPY
                     )
 
-                    # Find a faster alternative
+                    # TODO: Find a faster alternative
                     [System.Drawing.Bitmap] $updatedDesktop = [System.Drawing.Image]::FromHBitmap($dirtyRect_hBmp) 
                 
                     $desktopStream = New-Object System.IO.MemoryStream                
@@ -1479,7 +1507,9 @@ $global:EgressEventScriptBlock = {
     enum OutputEvent {
         KeepAlive = 0x1
         MouseCursorUpdated = 0x2  
-        ClipboardUpdated = 0x3     
+        ClipboardUpdated = 0x3
+        DesktopActive = 0x4
+        DesktopInactive = 0x5     
     }
 
     enum ClipboardMode {
@@ -1623,6 +1653,9 @@ $global:EgressEventScriptBlock = {
     $cursors = Initialize-Cursors
 
     $oldCursor = 0
+    
+    # Feature not yet available
+    #$desktopIsActive = [User32]::GetForegroundWindow() -ne [IntPtr]::Zero
 
     $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -1637,6 +1670,7 @@ $global:EgressEventScriptBlock = {
             {
                 $eventTriggered = $false
 
+                # Clipboard Update Detection
                 if ($Param.Clipboard -eq ([ClipboardMode]::Both) -or $Param.Clipboard -eq ([ClipboardMode]::Send))
                 {
                     # IDEA: Check for existing clipboard change event or implement a custom clipboard
@@ -1655,9 +1689,30 @@ $global:EgressEventScriptBlock = {
 
                         $HostSyncHash.ClipboardText = $currentClipboard
 
-                        $eventTriggered = $true                    
+                        $eventTriggered = $true
                     }
                 }
+
+                # Desktop Active / Inactive Detection
+                <#$desktopActiveProbe = [User32]::GetForegroundWindow() -ne [IntPtr]::Zero
+                if ($desktopIsActive -ne $desktopActiveProbe)
+                {
+                    if ($desktopActiveProbe)
+                    {
+                        $aEvent = [OutputEvent]::DesktopActive
+                    }
+                    else
+                    {
+                        $aEvent = [OutputEvent]::DesktopInactive
+                    }
+
+                    #if (-not (Send-Event -AEvent $aEvent))
+                    #{ break }
+
+                    $desktopIsActive = $desktopActiveProbe
+
+                    #$eventTriggered = $true
+                }#>
                 
                 # Send a Keep-Alive if during this second iteration nothing happened.
                 if (-not $eventTriggered)
@@ -1715,6 +1770,13 @@ function New-RunSpace
             Default: None
             Description: Object to attach in runspace context.
 
+        .PARAMETER LogonUI
+            Type: Boolean
+            Default: False
+            Description: 
+                New thread will attach its desktop to LogonUI / Winlogon 
+                (Requires SYSTEM Privilege on active session)
+
         .EXAMPLE
             New-RunSpace -Client $newClient -ScriptBlock { Start-Sleep -Seconds 10 }
     #>
@@ -1723,7 +1785,8 @@ function New-RunSpace
         [Parameter(Mandatory=$True)]
         [ScriptBlock] $ScriptBlock,
 
-        [PSCustomObject] $Param = $null
+        [PSCustomObject] $Param = $null,
+        [bool] $LogonUI = $false
     )   
 
     $runspace = [RunspaceFactory]::CreateRunspace()
@@ -1736,9 +1799,34 @@ function New-RunSpace
         $runspace.SessionStateProxy.SetVariable("Param", $Param) 
     }
 
-    $runspace.SessionStateProxy.SetVariable("HostSyncHash", $global:HostSyncHash)
+    $runspace.SessionStateProxy.SetVariable("HostSyncHash", $global:HostSyncHash)    
+    
+    $powershell = [PowerShell]::Create()
 
-    $powershell = [PowerShell]::Create().AddScript($ScriptBlock)
+    if ($LogonUI)
+    {
+        # Runspace prelude to update new thread desktop before something happens.  
+        # This code will switch new thread desktop from "WinSta0/default" to "WinSta0/winlogon".
+        # It requires to be "NT AUTHORITY/SYSTEM"
+        $null = $powershell.AddScript({    
+            $MAXIMUM_ALLOWED = 0x02000000;   
+
+            $winLogonDesktop = [User32]::OpenDesktop("winlogon", 0, $false, $MAXIMUM_ALLOWED);
+            if ($winLogonDesktop -eq [IntPtr]::Zero)
+            {                
+                return  
+            }
+            
+            if (-not [User32]::SetThreadDesktop($winLogonDesktop))
+            {
+                [User32]::CloseDesktop($winLogonDesktop)
+
+                return
+            }                    
+        })
+    }
+
+    $null = $powershell.AddScript($ScriptBlock)
 
     $powershell.Runspace = $runspace
 
@@ -2156,6 +2244,7 @@ class ServerSession {
     [bool] $ViewOnly = $false
     [ClipboardMode] $Clipboard = [ClipboardMode]::Both
     [string] $ViewerLocation = ""
+    [bool] $LogonUI = $false
     
     [System.Collections.Generic.List[PSCustomObject]]
     $WorkerThreads = @()
@@ -2209,7 +2298,7 @@ class ServerSession {
             SafeHash = $this.SafeHash
         }
         
-        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param))       
+        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:DesktopStreamScriptBlock -Param $param -LogonUI $this.LogonUI))       
         
         ###
 
@@ -2233,7 +2322,7 @@ class ServerSession {
             SafeHash = $this.SafeHash
         }
 
-        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param))    
+        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:EgressEventScriptBlock -Param $param -LogonUI $this.LogonUI))    
         
         ###
 
@@ -2244,7 +2333,7 @@ class ServerSession {
             SafeHash = $this.SafeHash       
         }
                         
-        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)) 
+        $this.WorkerThreads.Add((New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param -LogonUI $this.LogonUI)) 
 
         ###
 
@@ -2549,13 +2638,35 @@ class SessionManager {
             if ($viewerExpectation.PSobject.Properties.name -contains "BlockSize")
             {
                 $session.SafeHash.ViewerConfiguration.BlockSize = [BlockSize]$viewerExpectation.BlockSize
-            }            
+            }   
+
+            if ($viewerExpectation.PSobject.Properties.name -contains "LogonUI")
+            {
+                $session.LogonUI = $viewerExpectation.LogonUI
+
+                if ($session.LogonUI)
+                {
+                    if ([System.Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0)
+                    {
+                        $client.WriteLine(([ProtocolCommand]::LogonUIWrongSession))
+
+                        throw "Can't attach to Winlogon when current process session id is equal to zero."
+                    }
+
+                    if (-not [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem)
+                    {
+                        $client.WriteLine(([ProtocolCommand]::LogonUIAccessDenied))
+
+                        throw "Attach to Winlogon requires ""NT AUTHORITY/System"" privilege."
+                    }
+                }
+            }         
 
             Write-Verbose "New session successfully created."
 
             $this.Sessions.Add($session)    
             
-            $client.WriteLine((([ProtocolCommand]::Success)))
+            $client.WriteLine(([ProtocolCommand]::Success))
         }
         catch
         {

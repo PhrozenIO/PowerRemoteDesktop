@@ -47,7 +47,7 @@ Add-Type @"
     public static class User32 
     {
         [DllImport("User32.dll")] 
-        public static extern bool SetProcessDPIAware();    
+        public static extern bool SetProcessDPIAware();   
     }    
 "@
 
@@ -78,6 +78,8 @@ enum ProtocolCommand {
     BadRequest = 5
     ResourceFound = 6
     ResourceNotFound = 7
+    LogonUIAccessDenied = 8
+    LogonUIWrongSession = 9
 }
 
 enum WorkerKind {
@@ -748,6 +750,7 @@ class ViewerSession
     [int] $ResizeRatio = 0
     [PacketSize] $PacketSize = [PacketSize]::Size9216
     [BlockSize] $BlockSize = [BlockSize]::Size64
+    [bool] $LogonUI = $false
 
     [ClientIO] $ClientDesktop = $null
     [ClientIO] $ClientEvents = $null
@@ -955,7 +958,8 @@ class ViewerSession
                 ScreenName = $selectedScreen.Name 
                 ImageCompressionQuality = $this.ImageCompressionQuality
                 PacketSize = $this.PacketSize
-                BlockSize = $this.BlockSize                        
+                BlockSize = $this.BlockSize
+                LogonUI = $this.LogonUI                       
             }                       
 
             Write-Verbose "@ViewerExpectation:"
@@ -964,10 +968,34 @@ class ViewerSession
 
             $client.WriteJson($viewerExpectation)
 
-            if ($client.ReadLine(5 * 1000) -cne [ProtocolCommand]::Success)
+            switch ([ProtocolCommand] $client.ReadLine(5 * 1000))
             {
-                throw "Remote server did not respond to our expectation in time."
-            }
+                ([ProtocolCommand]::Success)
+                {
+                    break
+                }    
+
+                ([ProtocolCommand]::LogonUIAccessDenied)
+                {
+                    throw "Could not access LogonUI / Winlogon desktop.`r`n" +
+                          "To access LogonUI desktop, you must have ""NT AUTHORITY/System"" privilege in current active session."
+
+                    break
+                }
+
+                ([ProtocolCommand]::LogonUIWrongSession)
+                {
+                    throw "Could not access LogonUI / Winlogon desktop.`r`n"
+                          "To access LogonUI desktop, server process must be running under active Windows Session."  
+
+                    break
+                }
+
+                default
+                {
+                    throw "Remote server did not acknoledged our expectation in time."
+                }
+            }            
         } 
         catch
         {            
@@ -1122,6 +1150,16 @@ $global:VirtualDesktopUpdaterScriptBlock = {
 
         $Param.VirtualDesktopSyncHash.VirtualDesktop.Picture.Image = $scene # Assign our scene
 
+        # Wait until the virtual desktop form is shown to user desktop.
+        while (-not $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.Visible)
+        {
+            Start-Sleep -Milliseconds 100
+        }
+
+        # Tiny hack to correctly bring to front window, this is the most effective technique so far.
+        $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.TopMost = $true        
+        $Param.VirtualDesktopSyncHash.VirtualDesktop.Form.TopMost = $false
+
         while ($true)
         {                              
             try
@@ -1210,7 +1248,9 @@ $global:IngressEventScriptBlock = {
     enum InputEvent {
         KeepAlive = 0x1
         MouseCursorUpdated = 0x2 
-        ClipboardUpdated = 0x3         
+        ClipboardUpdated = 0x3
+        DesktopActive = 0x4
+        DesktopInactive = 0x5         
     }    
 
     enum ClipboardMode {
@@ -1291,6 +1331,18 @@ $global:IngressEventScriptBlock = {
                 $HostSyncHash.ClipboardText = $aEvent.Text
 
                 Set-Clipboard -Value $aEvent.Text
+
+                break
+            }
+
+            ([InputEvent]::DesktopActive)
+            {                
+                break
+            }
+
+            ([InputEvent]::DesktopInactive)
+            {                
+                break
             }
         }
     }    
@@ -1474,11 +1526,11 @@ function New-VirtualDesktopForm
     $form.Text = $Caption
     $form.KeyPreview = $true # Necessary to capture keystrokes.
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-    $form.MaximizeBox = $false        
+    $form.MaximizeBox = $false            
 
     $pictureBox = New-Object System.Windows.Forms.PictureBox
     $pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::StretchImage
+    $pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::StretchImage    
 
     $form.Controls.Add($pictureBox)    
 
@@ -1645,6 +1697,11 @@ function Invoke-RemoteDesktopViewer
                 Size256	-> 256x256
                 Size512	-> 512x512        
 
+        .PARAMETER LogonUI
+            Type: Switch
+            Default: None
+            Description: Request server to open LogonUI / Winlogon desktop insead of default user desktop (Requires SYSTEM privilege in active session).
+
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -Password "s3cr3t!"
@@ -1673,7 +1730,8 @@ function Invoke-RemoteDesktopViewer
 
         [switch] $AlwaysOnTop,
         [PacketSize] $PacketSize = [PacketSize]::Size9216,
-        [BlockSize] $BlockSize = [BlockSize]::Size64
+        [BlockSize] $BlockSize = [BlockSize]::Size64,
+        [switch] $LogonUI
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1722,6 +1780,7 @@ function Invoke-RemoteDesktopViewer
             $session.ImageCompressionQuality = $ImageCompressionQuality
             $session.PacketSize = $PacketSize
             $session.BlockSize = $BlockSize
+            $session.LogonUI = $LogonUI
 
             if ($Resize)
             {
@@ -1883,7 +1942,7 @@ function Invoke-RemoteDesktopViewer
                             Description: The type of mouse event (Example: Move, Click)
 
                         .PARAMETER Button
-                            Type: Integer
+                            Type: String
                             Default: None
                             Description: The pressed button on mouse (Example: Left, Right, Middle)
 
@@ -1917,7 +1976,7 @@ function Invoke-RemoteDesktopViewer
                         $outputEventSyncHash.Writer.WriteLine(($aEvent | ConvertTo-Json -Compress)) 
                     }  
                     catch
-                    {}                 
+                    {}               
                 }
 
                 function Send-VirtualKeyboard
@@ -1939,7 +1998,7 @@ function Invoke-RemoteDesktopViewer
                         [Parameter(Mandatory=$True)]
                         [string] $KeyChain
                     )
-
+                    
                     $aEvent = (New-KeyboardEvent -Keys $KeyChain)                                
 
                     try
@@ -1947,7 +2006,7 @@ function Invoke-RemoteDesktopViewer
                         $outputEventSyncHash.Writer.WriteLine(($aEvent  | ConvertTo-Json -Compress)) 
                     }
                     catch
-                    {}
+                    {}                    
                 }
 
                 $virtualDesktop.Form.Add_KeyPress(
@@ -2095,7 +2154,6 @@ function Invoke-RemoteDesktopViewer
 
             $newRunspace = (New-RunSpace -ScriptBlock $global:IngressEventScriptBlock -Param $param)  
             $runspaces.Add($newRunspace)
-
 
             Write-Verbose "Create runspace for outgoing events..."
 

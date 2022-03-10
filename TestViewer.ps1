@@ -8,13 +8,13 @@ Invoke-Expression -Command (Get-Content "PowerRemoteDesktop_Viewer\PowerRemoteDe
 
 # Different Scenarios
 
-$remoteHost = "127.0.0.1"#"172.22.94.38"
+$remoteHost = "127.0.0.1" #"172.22.94.38"
 $password = "Jade@123@Pwd"
 
 Write-Host "Scenarios"
 Write-Host "---------------"
 Write-Host "1. Classic (Secure Password)"
-Write-Host "2. Classic (Plain-text password)"
+Write-Host "2. Classic (Plain-text password) + LogonUI"
 Write-Host "3. Always On Top, Disable Verbosity"
 Write-Host "4. TLS v1.3"
 Write-Host "5. Clipboard Receive"
@@ -35,7 +35,7 @@ switch ($scenario)
 {
     2 
     { 
-        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost 
+        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -LogonUI
     }  
 
     3 
