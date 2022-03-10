@@ -940,23 +940,19 @@ class ViewerSession
             
             $this.ViewerConfiguration.ScreenX_Delta = $selectedScreen.X
             $this.ViewerConfiguration.ScreenY_Delta = $selectedScreen.Y
+            
+            if ($this.ViewerConfiguration.RequireResize)
+            {            
+                $this.ViewerConfiguration.ScreenX_Ratio = $selectedScreen.Width / $this.ViewerConfiguration.VirtualDesktopWidth
+                $this.ViewerConfiguration.ScreenY_Ratio = $selectedScreen.Height / $this.ViewerConfiguration.VirtualDesktopHeight                
+            } 
 
             $viewerExpectation = New-Object PSCustomObject -Property @{    
                 ScreenName = $selectedScreen.Name 
                 ImageCompressionQuality = $this.ImageCompressionQuality
                 PacketSize = $this.PacketSize
-                BlockSize = $this.BlockSize
-                FastResize = $this.FastResize           
-            }
-
-            if ($this.ViewerConfiguration.RequireResize)
-            {
-                $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopWidth" -Value $this.ViewerConfiguration.VirtualDesktopWidth
-                $viewerExpectation | Add-Member -MemberType NoteProperty -Name "ExpectDesktopHeight" -Value $this.ViewerConfiguration.VirtualDesktopHeight
-
-                $this.ViewerConfiguration.ScreenX_Ratio = $selectedScreen.Width / $this.ViewerConfiguration.VirtualDesktopWidth
-                $this.ViewerConfiguration.ScreenY_Ratio = $selectedScreen.Height / $this.ViewerConfiguration.VirtualDesktopHeight                
-            }            
+                BlockSize = $this.BlockSize                        
+            }                       
 
             Write-Verbose "@ViewerExpectation:"
             Write-Verbose $viewerExpectation
@@ -1481,7 +1477,8 @@ function New-VirtualDesktopForm
     $form.MaximizeBox = $false        
 
     $pictureBox = New-Object System.Windows.Forms.PictureBox
-    $pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill    
+    $pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::StretchImage
 
     $form.Controls.Add($pictureBox)    
 

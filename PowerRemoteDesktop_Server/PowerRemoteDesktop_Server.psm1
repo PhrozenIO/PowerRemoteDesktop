@@ -2131,18 +2131,10 @@ class ServerIO {
 }
 
 class ViewerConfiguration {
-    [string] $ScreenName = ""    
-    [int] $ExpectDesktopWidth = 0
-    [int] $ExpectDesktopHeight = 0
+    [string] $ScreenName = ""        
     [int] $ImageCompressionQuality = 100    
     [PacketSize] $PacketSize = [PacketSize]::Size9216
-    [BlockSize] $BlockSize = [BlockSize]::Size64
-    [bool] $FastResize = $false 
-
-    [bool] ResizeDesktop()
-    {
-        return $this.ExpectDesktopHeight -gt 0 -or $this.ExpectDesktopWidth -gt 0
-    }
+    [BlockSize] $BlockSize = [BlockSize]::Size64        
 
     [void] SetImageCompressionQuality([int] $Value)
     {
@@ -2494,7 +2486,11 @@ class SessionManager {
         {                           
             Write-Verbose "Remote peer as requested a new session..."
 
-            $session = [ServerSession]::New($this.ViewOnly, $this.Clipboard, $client.RemoteAddress())
+            $session = [ServerSession]::New(
+                $this.ViewOnly,
+                $this.Clipboard,
+                $client.RemoteAddress()
+            )
 
             Write-Verbose "@ServerSession"
             Write-Verbose "Id: ""$($session.Id)"""            
@@ -2539,17 +2535,7 @@ class SessionManager {
             if ($viewerExpectation.PSobject.Properties.name -contains "ScreenName")
             {
                 $session.SafeHash.ViewerConfiguration.ScreenName = $viewerExpectation.ScreenName    
-            }
-            
-            if ($viewerExpectation.PSobject.Properties.name -contains "ExpectDesktopWidth")
-            {
-                $session.SafeHash.ViewerConfiguration.ExpectDesktopWidth = $viewerExpectation.ExpectDesktopWidth
-            }
-
-            if ($viewerExpectation.PSobject.Properties.name -contains "ExpectDesktopHeight")
-            {
-                $session.SafeHash.ViewerConfiguration.ExpectDesktopHeight = $viewerExpectation.ExpectDesktopHeight
-            }
+            }                    
 
             if ($viewerExpectation.PSobject.Properties.name -contains "ImageCompressionQuality")
             {
@@ -2564,12 +2550,7 @@ class SessionManager {
             if ($viewerExpectation.PSobject.Properties.name -contains "BlockSize")
             {
                 $session.SafeHash.ViewerConfiguration.BlockSize = [BlockSize]$viewerExpectation.BlockSize
-            }
-
-            if ($viewerExpectation.PSobject.Properties.name -contains "FastResize")
-            {
-                $session.SafeHash.ViewerConfiguration.FastResize = $viewerExpectation.FastResize
-            }
+            }            
 
             Write-Verbose "New session successfully created."
 
