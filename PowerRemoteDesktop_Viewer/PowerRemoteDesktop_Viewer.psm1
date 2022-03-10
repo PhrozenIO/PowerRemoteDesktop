@@ -2130,7 +2130,7 @@ function Invoke-RemoteDesktopViewer
                         catch {}
                     }
                 )  
-            }
+            }            
 
             Write-Verbose "Create runspace for desktop streaming..."            
 

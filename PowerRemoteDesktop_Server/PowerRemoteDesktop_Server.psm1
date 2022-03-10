@@ -1039,8 +1039,10 @@ $global:DesktopStreamScriptBlock = {
 
         $dirtyRect = New-Object -TypeName System.Drawing.Rectangle -ArgumentList 0, 0, $screenBounds.Width, $screenBounds.Height
             
-        $fps = 0 # TODO Remove  
-        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew() # TODO Remove        
+        <#
+        $fps = 0
+        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+        #>
 
         while ($Param.SafeHash.SessionActive)
         {      
@@ -1223,7 +1225,7 @@ $global:DesktopStreamScriptBlock = {
                 $firstIteration = $false
             }
 
-            # TODO Remove Begin
+            <#
             $fps++
             if ($Stopwatch.ElapsedMilliseconds -ge 1000)
             {
@@ -1232,7 +1234,7 @@ $global:DesktopStreamScriptBlock = {
 
                 $Stopwatch.Restart()
             }
-            # TODO Remove End
+            #>
         }
     }
     finally
