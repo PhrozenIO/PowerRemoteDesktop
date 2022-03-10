@@ -1007,17 +1007,17 @@ $global:DesktopStreamScriptBlock = {
         $sizeOfUInt32 = [Runtime.InteropServices.Marshal]::SizeOf([System.Type][UInt32])
         $struct = New-Object -TypeName byte[] -ArgumentList ($sizeOfUInt32 * 3)
 
-        $blockRect = New-Object -TypeName System.Drawing.Rectangle
-
         $topLeftBlock = [System.Drawing.Point]::Empty
         $bottomRightBlock = [System.Drawing.Point]::Empty   
 
         $blockMemSize = ((($BlockSize * 32) + 32) -band -bnot 32) / 8
         $blockMemSize *= $BlockSize 
         $ptrBlockMemSize = [IntPtr]::New($blockMemSize)
+
+        $dirtyRect = New-Object -TypeName System.Drawing.Rectangle -ArgumentList 0, 0, $screenBounds.Width, $screenBounds.Height
             
         $fps = 0 # TODO Remove  
-        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew() # TODO Remove
+        $stopWatch = [System.Diagnostics.Stopwatch]::StartNew() # TODO Remove        
 
         while ($Param.SafeHash.SessionActive)
         {      
@@ -1102,13 +1102,7 @@ $global:DesktopStreamScriptBlock = {
                 }                            
             }     
             
-            if ($firstIteration)
-            {
-                $updated = $true
-                
-                $dirtyRect = $screenBounds
-            } 
-            elseif ($updated)
+            if ($updated)
             {                
                 # Create new updated rectangle pointing to the dirty region (since last snapshot)
                 $dirtyRect.X = $topLeftBlock.X * $BlockSize
@@ -1118,7 +1112,7 @@ $global:DesktopStreamScriptBlock = {
                 $dirtyRect.Height = (($bottomRightBlock.Y * $BlockSize) + $BlockSize) - $dirtyRect.Top                
             }            
             
-            if ($updated)
+            if ($updated -or $firstIteration)
             {                           
                 try
                 {

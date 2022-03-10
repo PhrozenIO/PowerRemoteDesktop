@@ -1164,7 +1164,6 @@ $global:VirtualDesktopUpdaterScriptBlock = {
                 break
             }                            
         }
-
     }
     finally
     {        
