@@ -966,17 +966,21 @@ $global:DesktopStreamScriptBlock = {
             } BITMAPINFOHEADER, *LPBITMAPINFOHEADER, *PBITMAPINFOHEADER; 
 
             // x86-32|64 Struct Size: 0x28 (40 Bytes)
+            // BITMAPINFO = BITMAPINFOHEADER (0x28) + RGBQUAD (0x4) = 0x2c
         #>
 
-        $pBitmapInfoHeader = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(0x28)
+        $bitmapInfoHeaderSize = 0x28
+        $bitmapInfoSize = $bitmapInfoHeaderSize + 0x4
+
+        $pBitmapInfoHeader = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($bitmapInfoSize)
 
         # ZeroMemory
-        for ($i = 0; $i -lt $structSize; $i++)
+        for ($i = 0; $i -lt $bitmapInfoSize; $i++)
         {
             [System.Runtime.InteropServices.Marshal]::WriteByte($pBitmapInfoHeader, $i, 0x0)    
         }
 
-        [System.Runtime.InteropServices.Marshal]::WriteInt32($pBitmapInfoHeader, 0x0, 0x28) # biSize
+        [System.Runtime.InteropServices.Marshal]::WriteInt32($pBitmapInfoHeader, 0x0, $bitmapInfoHeaderSize) # biSize
         [System.Runtime.InteropServices.Marshal]::WriteInt32($pBitmapInfoHeader, 0x4, $BlockSize) # biWidth
         [System.Runtime.InteropServices.Marshal]::WriteInt32($pBitmapInfoHeader, 0x8, $BlockSize) # biHeight
         [System.Runtime.InteropServices.Marshal]::WriteInt16($pBitmapInfoHeader, 0xc, 0x1) # biPlanes
@@ -993,6 +997,8 @@ $global:DesktopStreamScriptBlock = {
             [IntPtr]::Zero,
             0
         )
+
+        $HostSyncHash.host.ui.WriteLine($spaceBlock_DC)
 
         $null = [GDI32]::SelectObject($spaceBlock_DC, $spaceBlock_hBmp)
 
@@ -1215,12 +1221,7 @@ $global:DesktopStreamScriptBlock = {
         {
             $null = [GDI32]::DeleteDC($mirrorDesktop_DC)
         }
-
-        if ($desktop_DC -ne [IntPtr]::Zero)
-        {
-            $null = [User32]::ReleaseDC([User32]::GetDesktopWindow(), $desktop_DC)    
-        }
-
+    
         if ($mirrorDesktop_hBmp -ne [IntPtr]::Zero)
         {
             $null = [GDI32]::DeleteObject($mirrorDesktop_hBmp)
@@ -1244,6 +1245,11 @@ $global:DesktopStreamScriptBlock = {
         if ($pBitmapInfoHeader -ne [IntPtr]::Zero)
         {
             [System.Runtime.InteropServices.Marshal]::FreeHGlobal($pBitmapInfoHeader)
+        }
+
+        if ($desktop_DC -ne [IntPtr]::Zero)
+        {
+            $null = [User32]::ReleaseDC([User32]::GetDesktopWindow(), $desktop_DC)    
         }
 
         # Tangent univers big crunch

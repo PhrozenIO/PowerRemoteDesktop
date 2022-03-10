@@ -245,7 +245,6 @@ Create a new remote desktop session with a Power Remote Desktop Server.
 | AlwaysOnTop             | Switch           | False      | If present, virtual desktop form will be above all other window's |
 | PacketSize              | Enum             | Size9216   | Define the network packet size for streams. Choose the packet size accordingly to your network constrainsts. |
 | BlockSize               | Enum             | Size64     | Define the screen grid block size. Choose the block size accordingly to remote screen size / computer constrainsts (CPU / Network) |
-| FastResize              | Switch           | False      | Control the quality of remote desktop resize (smoothing) if applicable. If you lack of network speed, this option is recommended. |
 
 ##### Clipboard Mode Enum Properties
 
@@ -498,6 +497,12 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * Code refactoring and improvement.
 * Desktop streaming improvement to gain few more FPS.
 * Support password-protected external x509 Certificates.
+
+### X March 2022 (4.0.0)
+
+* Huge desktop streaming optimization, FPS rate increased by 65% (even more if tuning BlockSize)
+* Desktop resize is now made viewer-side and automatically to simplify the code and efficiency.
+* FastResize option is not required anymore.
 
 ### List of ideas and TODO
 

@@ -8,7 +8,7 @@ Invoke-Expression -Command (Get-Content "PowerRemoteDesktop_Viewer\PowerRemoteDe
 
 # Different Scenarios
 
-$remoteHost = "127.0.0.1"
+$remoteHost = "127.0.0.1" #"172.22.94.38"
 $password = "Jade@123@Pwd"
 
 Write-Host "Scenarios"
@@ -23,7 +23,7 @@ Write-Host "7. Clipboard Disabled"
 Write-Host "8. Image Quality Really Bad"
 Write-Host "9. Image Quality Bad"
 Write-Host "10. Image Quality High"
-Write-Host "11. Resize 10% + Bad Resize Quality (FastResize)"
+Write-Host "11. Resize 10% + Bad Resize Quality"
 Write-Host "12. Resize 80%, Packet Size 16KiB, BlockSize 128x128"
 Write-Host "13. Bad Password"
 
@@ -100,7 +100,7 @@ switch ($scenario)
         Write-Host "⚡Check if desktop image is reduced by 10%."
         Write-Host "⚡Check if resize quality is bad."
 
-        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 90 -FastResize
+        Invoke-RemoteDesktopViewer -Password $password -ServerAddress $remoteHost -Resize -ResizeRatio 90
     }
 
     12 

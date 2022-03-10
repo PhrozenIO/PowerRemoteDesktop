@@ -746,7 +746,6 @@ class ViewerSession
     [int] $ResizeRatio = 0
     [PacketSize] $PacketSize = [PacketSize]::Size9216
     [BlockSize] $BlockSize = [BlockSize]::Size64
-    [bool] $FastResize = $false
 
     [ClientIO] $ClientDesktop = $null
     [ClientIO] $ClientEvents = $null
@@ -940,7 +939,7 @@ class ViewerSession
             
             $this.ViewerConfiguration.ScreenX_Delta = $selectedScreen.X
             $this.ViewerConfiguration.ScreenY_Delta = $selectedScreen.Y
-            
+
             if ($this.ViewerConfiguration.RequireResize)
             {            
                 $this.ViewerConfiguration.ScreenX_Ratio = $selectedScreen.Width / $this.ViewerConfiguration.VirtualDesktopWidth
@@ -1643,14 +1642,7 @@ function Invoke-RemoteDesktopViewer
                 Size96  -> 96x96
                 Size128 -> 128x128
                 Size256	-> 256x256
-                Size512	-> 512x512
-
-        .PARAMETER FastResize
-            Type: Switch
-            Default: None
-            Description:
-                Control the quality of remote desktop resize (smoothing) if applicable.
-                If you lack of network speed, this option is recommended.
+                Size512	-> 512x512        
 
         .EXAMPLE
             Invoke-RemoteDesktopViewer -ServerAddress "192.168.0.10" -ServerPort "2801" -SecurePassword (ConvertTo-SecureString -String "s3cr3t!" -AsPlainText -Force)
@@ -1680,8 +1672,7 @@ function Invoke-RemoteDesktopViewer
 
         [switch] $AlwaysOnTop,
         [PacketSize] $PacketSize = [PacketSize]::Size9216,
-        [BlockSize] $BlockSize = [BlockSize]::Size64,
-        [switch] $FastResize = $false
+        [BlockSize] $BlockSize = [BlockSize]::Size64
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$runspaces = @()
@@ -1730,7 +1721,6 @@ function Invoke-RemoteDesktopViewer
             $session.ImageCompressionQuality = $ImageCompressionQuality
             $session.PacketSize = $PacketSize
             $session.BlockSize = $BlockSize
-            $session.FastResize = $FastResize
 
             if ($Resize)
             {
