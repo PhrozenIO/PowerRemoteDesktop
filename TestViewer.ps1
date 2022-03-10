@@ -8,7 +8,7 @@ Invoke-Expression -Command (Get-Content "PowerRemoteDesktop_Viewer\PowerRemoteDe
 
 # Different Scenarios
 
-$remoteHost = "127.0.0.1" #"172.22.94.38"
+$remoteHost = "172.22.94.38"
 $password = "Jade@123@Pwd"
 
 Write-Host "Scenarios"

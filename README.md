@@ -503,6 +503,8 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * Huge desktop streaming optimization, FPS rate increased by 65% (even more if tuning BlockSize)
 * Desktop resize is now made viewer-side and automatically to simplify the code and efficiency.
 * FastResize option is not required anymore.
+* Various code optimization / fix.
+* WIN Keyboard Key supported.
 
 ### List of ideas and TODO
 

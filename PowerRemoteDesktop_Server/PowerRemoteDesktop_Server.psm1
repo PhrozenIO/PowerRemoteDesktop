@@ -998,8 +998,6 @@ $global:DesktopStreamScriptBlock = {
             0
         )
 
-        $HostSyncHash.host.ui.WriteLine($spaceBlock_DC)
-
         $null = [GDI32]::SelectObject($spaceBlock_DC, $spaceBlock_hBmp)
 
         # Create our dirty rect DC
@@ -1106,7 +1104,8 @@ $global:DesktopStreamScriptBlock = {
             
             if ($firstIteration)
             {
-                # Send the full desktop if we are in the first iteration
+                $updated = $true
+                
                 $dirtyRect = $screenBounds
             } 
             elseif ($updated)
@@ -1119,7 +1118,7 @@ $global:DesktopStreamScriptBlock = {
                 $dirtyRect.Height = (($bottomRightBlock.Y * $BlockSize) + $BlockSize) - $dirtyRect.Top                
             }            
             
-            if (-not $dirtyRect.IsEmpty)
+            if ($updated)
             {                           
                 try
                 {
