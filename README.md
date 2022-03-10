@@ -393,7 +393,7 @@ Since version 4.0.0, it is possible to capture **LogonUI** / **Winlogon** (UAC P
 
 Multiple methods exists to spawn a process as **SYSTEM User** under active session (Ex: PsExec, Process Hacker)
 
-For simplicity I recommend using one of my other projects called ![PowerRunAsSystem](https://github.com/DarkCoderSc/PowerRunAsSystem) 
+For simplicity I recommend using one of my other projects called [PowerRunAsSystem](https://github.com/DarkCoderSc/PowerRunAsSystem) 
 
 You can install this module using your favorite method, for example with PowerShell Gallery
 
