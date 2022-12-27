@@ -6,11 +6,13 @@
 
 <img src="Assets/prdp-banner.png" width="100%"/>
 
-*Power Remote Desktop* is a fully functional Remote Desktop Application entirely coded in PowerShell.
+Welcome to **Power Remote Desktop** for remote desktop access in pure PowerShell! This module offers a unique solution for remotely controlling one or multiple screens using only PowerShell. Unlike other remote desktop tools that rely on external protocols and software, our module utilizes its own  remote desktop protocol.
 
-It doesn't rely on any existing Remote Desktop Application or Protocol to function. A serious advantage of this application is its nature (PowerShell) and its ease of use and installation.
+The module consists of both a client and a server component, both of which are written entirely in PowerShell. Our protocol provides secure, encrypted communication using TLS and offers both challenge-based password authentication and certificate-based authentication.
 
-This project demonstrate why PowerShell contains the word *Power*. It is unfortunately often an underestimated programming language that is not only resumed to running commands or being a more fancy replacement to the old Windows command-line interpreter (cmd).
+In addition to providing full mouse and keyboard control over the remote desktop, our module also replicates the mouse cursor icon for the viewer, synchronizes the clipboard between the local and remote systems, and more. Despite the limitations of PowerShell, we have implemented techniques to optimize network traffic and improve the streaming experience, resulting in a smooth and efficient remote desktop experience.
+
+At the time of writing, this is the only known entirely PowerShell-based remote desktop application. We hope you find it useful and we welcome any feedback or suggestions you may have.
 
 Tested on:
 
@@ -21,7 +23,7 @@ Current version: **4.0.0 Stable**
 
 ## Performance
 
-Enjoy better streaming performance and a better experience using **PowerShell 7** instead of **PowerShell 5**.
+For a better streaming performance and overall experience, we recommend using PowerShell 7 instead of PowerShell 5.
 
 You can install PowerShell 7 for Windows [here](https://docs.microsoft.com/fr-fr/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.2)
 
@@ -31,18 +33,18 @@ You can install PowerShell 7 for Windows [here](https://docs.microsoft.com/fr-fr
 
 <img src="Assets/image31.png" width="100%"/>
 
-* Remote Desktop Streaming with support of HDPI and Scaling.
-* Remote Control: Mouse (Moves, Clicks, Wheel) and Key Strokes (Keyboard)
-* **Secure**: Network traffic is encrypted using TLSv1.2 or 1.3. Access to server is granted via a challenge-based authentication mechanism (using user defined complex password).
-* Network traffic encryption is using whether a default X509 Certificate (Requires Administrator) or your custom X509 Certificate.
-* Server certificate fingerprint validation supported and optionally persistent between sessions.
-* Clipboard text synchronization between Viewer and Server.
-* Mouse cursor icon state is synchronized between Viewer (Virtual Desktop) and Server.
-* Multi-Screen (Monitor) support. If remote computer have more than one desktop screen, you can choose which desktop screen to capture.
-* View Only mode for demonstration. You can disable remote control abilities and just show your screen to remote peer.
-* Session concurrency. Multiple viewers can connect to a single server at the same time.
-* Prevent computer to enter in sleep mode while server is waiting for viewers.
-* Only pieces of desktop that was updated are sent to viewer to increase streaming speed.
+* Remote Desktop Streaming: This feature allows you to stream the desktop of the remote computer to your own device. The streaming supports HDPI and scaling, providing a high-quality display on various screens and resolutions.
+* Remote Control: With this feature, you can control the mouse (including moves, clicks, and wheel) and keyboard of the remote computer as if you were sitting in front of it.
+* Secure: To protect the privacy and security of your remote desktop sessions, the module uses TLSv1.2 or 1.3 to encrypt the network traffic. Access to the server is granted through a challenge-based authentication mechanism that requires a user-defined complex password.
+* Network Traffic Encryption: The module supports encrypting the network traffic using either a default X509 certificate (which requires administrator privileges) or your own custom X509 certificate.
+* Server Certificate Fingerprint Validation: To ensure the authenticity of the server, the module allows you to validate the fingerprint of the server certificate and optionally persist this validation between sessions.
+* Clipboard Synchronization: This feature allows you to synchronize the clipboard text between the viewer (your device) and the server (the remote computer). You can easily copy and paste text between the two systems.
+* Mouse Cursor Icon Synchronization: The module also synchronizes the state of the mouse cursor icon between the viewer (virtual desktop) and the server, providing a more seamless and intuitive remote desktop experience.
+* Multi-Screen Support: If the remote computer has more than one desktop screen, you can choose which screen to capture and stream to your device.
+* View Only Mode: This feature allows you to disable remote control abilities and simply view the screen of the remote computer. It can be useful for demonstrations or presentations.
+* Session Concurrency: Multiple viewers can connect to a single server at the same time, allowing multiple users to collaborate on the same remote desktop.
+* Sleep Mode Prevention: To ensure that the remote desktop remains active and responsive, the module prevents the remote computer from entering sleep mode while it is waiting for viewers to connect.
+* Streaming Optimization: To improve the streaming speed, the module only sends updated pieces of the desktop to the viewer, reducing the amount of data transmitted over the network.
 
 ---
 
@@ -54,7 +56,7 @@ Install-Module -Name PowerRemoteDesktop_Server
 Invoke-RemoteDesktopServer -CertificateFile "<certificate_location>"
 ````
 
-If you are even more lazy and want to avoid using your own certificate, remove `CertificateFile` option but you will need to run PowerShell as Administrator.
+If you want to avoid using your own certificate and prefer not to go through the process of creating one, you can remove the 'CertificateFile' option and run PowerShell as an administrator instead.
 
 ````powershell
 Install-Module -Name PowerRemoteDesktop_Viewer
@@ -68,13 +70,11 @@ Thats it 😉
 
 ## Detailed Installation and Instructions
 
-You will find multiple ways to use this PowerShell Applications. Recommended method would be to install both Server and Viewer using the PowerShell Gallery but you can also do it manually as an installed module or imported script.
+There are several ways to use this PowerShell application. The recommended method is to install both the server and viewer components using the PowerShell Gallery. Alternatively, you can install them as modules or import them as scripts manually. Choose the method that best fits your needs and preferences.
 
 ### Install as a PowerShell Module from PowerShell Gallery (**Recommended**)
 
-You can install Power Remote Desktop from PowerShell Gallery. See PowerShell Gallery as the 'equivalent' of Aptitude for Debian or Brew for MacOS.
-
-Run the following commands:
+You can install Power Remote Desktop from the PowerShell Gallery, which is similar to Aptitude for Debian or Brew for MacOS. To do so, run the following commands: 
 
 ```powershell
 Install-Module -Name PowerRemoteDesktop_Server
@@ -84,7 +84,7 @@ Install-Module -Name PowerRemoteDesktop_Viewer
 
 `AllowPrerelease` is mandatory when current version is marked as a *Prerelease*
 
-Your command prompt will show the following warning:
+When you run the command, you may see the following warning in your command prompt:
 
 ```
 Untrusted repository
@@ -93,9 +93,7 @@ InstallationPolicy value by running the Set-PSRepository cmdlet. Are you sure yo
 'PSGallery'?
 ```
 
-Answer `Y` to proceed installation.
-
-Both modules should now be available, you can verify using the command:
+Type 'Y' to confirm and proceed with the installation. When the installation is complete, both modules should be available. You can verify this by running the following command: 
 
 ```powershell
 Get-Module -ListAvailable
@@ -118,7 +116,7 @@ Manifest   1.0.0      PowerRemoteDesktop_Viewer           Invoke-RemoteDesktopVi
 <..snip..>
 ```
 
-If you don't see them, run the following commands and check back.
+If the modules are not showing up, try running the following commands and then check again: 
 
 ```powershell
 Import-Module PowerRemoteDesktop_Server
@@ -128,9 +126,7 @@ Import-Module PowerRemoteDesktop_Viewer
 
 ### Install as a PowerShell Module (Manually / Unmanaged)
 
-To be available, the module must first be present in a registered module path.
-
-You can list module paths with following command:
+In order for a module to be available, it must be located in a registered module path. You can view the registered module paths by running the following command: 
 
 ```powershell
 Write-Output $env:PSModulePath
@@ -232,29 +228,29 @@ Create a new remote desktop session with a Power Remote Desktop Server.
 
 | Parameter               | Type             | Default    | Description  |
 |-------------------------|------------------|------------|--------------|
-| ServerAddress           | String           | 127.0.0.1  | Remote server host/address  |
-| ServerPort              | Integer          | 2801       | Remote server port |
-| SecurePassword          | SecureString     | None       | SecureString object containing password used to authenticate with remote server (Recommended) |
-| Password                | String           | None       | Plain-Text Password used to authenticate with remote server (Not recommended, use SecurePassword instead) |
-| DisableVerbosity        | Switch           | False      | If present, program wont show verbosity messages |
-| UseTLSv1_3              | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
-| Clipboard               | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
-| ImageCompressionQuality | Integer (0-100)  | 75         | JPEG Compression level from 0 to 100. 0 = Lowest quality, 100 = Highest quality. |
-| Resize                  | Switch           | False      | If present, remote desktop will get resized accordingly with `ResizeRatio` option. |
-| ResizeRatio             | Integer (30-99)  | 90         | Used with `Resize` option, define the resize ratio in percentage. |
-| AlwaysOnTop             | Switch           | False      | If present, virtual desktop form will be above all other window's |
-| PacketSize              | Enum             | Size9216   | Define the network packet size for streams. Choose the packet size accordingly to your network constrainsts. |
-| BlockSize               | Enum             | Size64     | Define the screen grid block size. Choose the block size accordingly to remote screen size / computer constrainsts (CPU / Network) |
-| LogonUI                 | Switch           | False      | Request server to open LogonUI / Winlogon desktop insead of default user desktop (Requires SYSTEM privilege in active session). |
+| ServerAddress           | String           | 127.0.0.1  | Remote server host or address  |
+| ServerPort              | Integer          | 2801       | Port number for the remote server |
+| SecurePassword          | SecureString     | None       | SecureString object containing the password used for authenticating with the remote server (recommended) |
+| Password                | String           | None       | Plain-text password used for authenticating with the remote server (not recommended; use SecurePassword instead)) |
+| DisableVerbosity        | Switch           | False      | If specified, the program will suppress verbosity messages |
+| UseTLSv1_3              | Switch           | False      | If specified, the program will use TLS v1.3 instead of TLS v1.2 for encryption (recommended if both systems support it) |
+| Clipboard               | Enum             | Both       | Specify the clipboard synchronization mode (options include 'Both', 'Disabled', 'Send', and 'Receive'; see below for more detail) |
+| ImageCompressionQuality | Integer (0-100)  | 75         | JPEG compression level ranging from 0 (lowest quality) to 100 (highest quality) |
+| Resize                  | Switch           | False      | If specified, the remote desktop will be resized according to the 'ResizeRatio' option |
+| ResizeRatio             | Integer (30-99)  | 90         | Used in conjunction with the 'Resize' option, specify the resize ratio as a percentage |
+| AlwaysOnTop             | Switch           | False      | If specified, the virtual desktop window will be displayed above all other windows |
+| PacketSize              | Enum             | Size9216   | Specify the network packet size for streams. Choose a size that is appropriate for your network constraints. |
+| BlockSize               | Enum             | Size64     | Specify the size of the screen grid blocks. Choose a size that is appropriate for the remote screen size and the computer's resources (such as CPU and network capabilities) |
+| LogonUI                 | Switch           | False      | Request the server to open the LogonUI/Winlogon desktop instead of the default user desktop (requires SYSTEM privilege in the active session) |
 
 ##### Clipboard Mode Enum Properties
 
 | Value             | Description                                        | 
 |-------------------|----------------------------------------------------|
-| Disabled          | Clipboard synchronization is disabled in both side |
-| Receive           | Only incomming clipboard is allowed                |
-| Send              | Only outgoing clipboard is allowed                 |
-| Both              | Clipboard synchronization is allowed on both side  |
+| Disabled          | Clipboard synchronization is disabled on both the viewer and server sides |
+| Receive           | Only incoming clipboard data is allowed                |
+| Send              | Only outgoing clipboard data is allowed                 |
+| Both              | Clipboard synchronization is allowed on both the viewer and server sides  |
 
 ##### PacketSize Mode Enum Properties
 
@@ -281,11 +277,11 @@ Create a new remote desktop session with a Power Remote Desktop Server.
 
 ##### ⚠️ Important Notices
 
-Prefer using `SecurePassword` over plain-text password even if a plain-text password is getting converted to `SecureString` anyway.
+It is recommended to use SecurePassword instead of a plain-text password, even if the plain-text password is being converted to a SecureString
 
 #### Example
 
-Open a new remote desktop session to `127.0.0.1:2801` with password `urCompl3xP@ssw0rd`
+Open a new remote desktop session to '127.0.0.1:2801' using the password 'urCompl3xP@ssw0rd'
 
 ```powershell
 Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort 2801 -SecurePassword (ConvertTo-SecureString -String "urCompl3xP@ssw0rd" -AsPlainText -Force)
@@ -293,9 +289,7 @@ Invoke-RemoteDesktopViewer -ServerAddress "127.0.0.1" -ServerPort 2801 -SecurePa
 
 #### Enumerate Trusted Servers
 
-When a fingerprint is met for the first time, viewer will ask you if you want to trust this new remote server fingerprint.
-
-When you choose the `[A] Always` option, this fingerprint will be saved to local user registry. If you change your mind, you can revoke trsuted fingerprint at any time using dedicated functions.
+When connecting to a new remote server for the first time, the viewer will ask if you want to trust the server's fingerprint. If you select the option to 'Always' trust this fingerprint, it will be saved in the local user registry. You can revoke the trust for this fingerprint at any time using the appropriate function.
 
 ```powershell
 Get-TrustedServers
@@ -342,40 +336,40 @@ Invoke-RemoteDesktopServer
  
 | Parameter              | Type             | Default    | Description  |
 |------------------------|------------------|------------|--------------|
-| ServerAddress          | String           | 0.0.0.0    | IP Address that represents the local IP address |
-| ServerPort             | Integer          | 2801       | The port on which to listen for incoming connection |
-| SecurePassword         | SecureString     | None       | SecureString object containing password used to authenticate remote viewer (Recommended) |
-| Password               | String           | None       | Plain-Text Password used to authenticate remote viewer (Not recommended, use SecurePassword instead) |
-| DisableVerbosity       | Switch           | False      | If present, program wont show verbosity messages |
-| UseTLSv1_3             | Switch           | False      | If present, TLS v1.3 will be used instead of TLS v1.2 (Recommended if applicable to both systems) |
-| Clipboard              | Enum             | Both       | Define clipboard synchronization mode (`Both`, `Disabled`, `Send`, `Receive`) see bellow for more detail |
-| CertificateFile        | String           | None       | A file containing valid certificate information (x509), must include the **private key**  |
-| EncodedCertificate     | String           | None       | A **base64** representation of the whole certificate file, must include the **private key** |
-| ViewOnly               | Switch           | False      | If present, remote viewer is only allowed to view the desktop (Mouse and Keyboard are not authorized) |
-| PreventComputerToSleep | Switch           | False      | If present, this option will prevent computer to enter in sleep mode while server is active and waiting for new connections. |
-| CertificatePassword    | SecureString     | None       | Specify the password used to open a password-protected x509 Certificate provided by user. | 
+| ServerAddress          | String           | 0.0.0.0    | IP address representing the local machine's IP address |
+| ServerPort             | Integer          | 2801       | The port number on which to listen for incoming connections |
+| SecurePassword         | SecureString     | None       | SecureString object containing the password used for authenticating remote viewers (recommended) |
+| Password               | String           | None       | Plain-text password used for authenticating remote viewers (not recommended; use SecurePassword instead) |
+| DisableVerbosity       | Switch           | False      | If specified, the program will suppress verbosity messages |
+| UseTLSv1_3             | Switch           | False      | If specified, the program will use TLS v1.3 instead of TLS v1.2 for encryption (recommended if both systems support it) |
+| Clipboard              | Enum             | Both       | Specify the clipboard synchronization mode (options include 'Both', 'Disabled', 'Send', and 'Receive'; see below for more detail) |
+| CertificateFile        | String           | None       | A file containing valid certificate information (x509) that includes the private key  |
+| EncodedCertificate     | String           | None       | A base64-encoded representation of the entire certificate file, including the private key |
+| ViewOnly               | Switch           | False      | If specified, the remote viewer will only be able to view the desktop and will not have access to the mouse or keyboard |
+| PreventComputerToSleep | Switch           | False      | If specified, this option will prevent the computer from entering sleep mode while the server is active and waiting for new connections |
+| CertificatePassword    | SecureString     | None       | Specify the password used to access a password-protected x509 certificate provided by the user | 
 
 ##### Server Address Examples
 
 | Value             | Description                                                              | 
 |-------------------|--------------------------------------------------------------------------|
-| 127.0.0.1         | Only listen for localhost connection (most likely for debugging purpose) |
-| 0.0.0.0           | Listen on all network interfaces (Local, LAN, WAN)                       |
+| 127.0.0.1         | Only listen for connections from the localhost (usually for debugging purposes) |
+| 0.0.0.0           | Listen for connections on all network interfaces, including the local network and the internet                       |
 
 ##### Clipboard Mode Enum Properties
 
 | Value             | Description                                        | 
 |-------------------|----------------------------------------------------|
-| Disabled          | Clipboard synchronization is disabled in both side |
-| Receive           | Only incomming clipboard is allowed                |
-| Send              | Only outgoing clipboard is allowed                 |
-| Both              | Clipboard synchronization is allowed on both side  |
+| Disabled          | Clipboard synchronization is disabled on both the viewer and server sides |
+| Receive           | Only incoming clipboard data is allowed                |
+| Send              | Only outgoing clipboard data is allowed                 |
+| Both              | Clipboard synchronization is allowed on both the viewer and server sides  |
 
 ##### ⚠️ Important Notices
 
-1. Prefer using `SecurePassword` over plain-text password even if a plain-text password is getting converted to `SecureString` anyway.
-2. Not specifying a custom certificate using `CertificateFile` or `EncodedCertificate` result in generating a default self-signed certificate (if not already generated) that will get installed on local machine thus requiring administrator privilege. If you want to run the server as a non-privileged account, specify your own certificate location.
-3. If you don't specify a `SecurePassword` or `Password`, a random complex password will be generated and displayed on terminal (this password is temporary).
+1. It is recommended to use SecurePassword instead of a plain-text password, even if the plain-text password is being converted to a SecureString.
+2. If you do not specify a custom certificate using 'CertificateFile' or 'EncodedCertificate', a default self-signed certificate will be generated and installed on the local machine (if one does not already exist). This requires administrator privileges. To run the server with a non-privileged account, you must provide your own certificate location.
+3. If you do not specify a SecurePassword or Password, a random, complex password will be generated and displayed in the terminal (this password is temporary).
 
 ##### Examples
 
@@ -387,15 +381,11 @@ Invoke-RemoteDesktopServer -ListenAddress "0.0.0.0" -ListenPort 2801 -SecurePass
 
 #### How to capture LogonUI
 
-Since version 4.0.0, it is possible to capture **LogonUI** / **Winlogon** (UAC Prompt, Windows Login Window, CTRL+ALT+DEL etc...).
+As of version 4.0.0, it is possible to capture the LogonUI/Winlogon (UAC Prompt, Windows Login Window, CTRL+ALT+DEL, etc.). 
 
-⚠️ To be able to capture LogonUI, you must run your server under the context of **NT AUTHORITY/System** in the current active session.
+However, in order to capture the LogonUI, the server must be run under the context of 'NT AUTHORITY/System' in the current active session. 
 
-Multiple methods exists to spawn a process as **SYSTEM User** under active session (Ex: PsExec, Process Hacker)
-
-For simplicity I recommend using one of my other projects called [PowerRunAsSystem](https://github.com/DarkCoderSc/PowerRunAsSystem) 
-
-You can install this module using your favorite method, for example with PowerShell Gallery
+There are multiple methods for spawning a process as the SYSTEM user in the active session (e.g., PsExec, Process Hacker), but for simplicity I recommend using my PowerRunAsSystem project (available on GitHub and installable through the PowerShell Gallery).
 
 ````powershell
 Install-Module -Name PowerRunAsSystem
@@ -409,13 +399,11 @@ Invoke-InteractiveSystemPowerShell
 
 A new PowerShell terminal should appear on your desktop as **NT AUTHORITY/System**
 
-You can now enter your Power Remote Desktop server command, future Power Remote Desktop viewer will now be able to use the option `LogonUI` to request LogonUI / Winlogon desktop on active session.
+If you follow the steps above, a new PowerShell terminal should appear on your desktop running as the 'NT AUTHORITY/System' user.
 
-#### Generate and pass your own X509 Certificate
+From this terminal, you can run the Power Remote Desktop server command and enable the 'LogonUI' option for future Power Remote Desktop viewer connections. 
 
-⚠️ Remember that not using your own X509 certificate will result in requiring administrator privilege to create a new server.
-
-Fortunately, you can easily create your own X509 certificate for example with the help of [OpenSSL command line tool](https://www.openssl.org).
+It's worth noting that if you don't use your own X509 certificate, you will need administrator privileges to create a new server. However, you can easily create your own X509 certificate using tools such as the OpenSSL command line tool.
 
 ##### Generate your Certificate
 
@@ -547,21 +535,19 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 
 # Disclaimer
 
-We are doing our best to prepare the content of this app. However, PHROZEN SASU and / or
-Jean-Pierre LESUEUR cannot warranty the expressions and suggestions of the contents,
-as well as its accuracy. In addition, to the extent permitted by the law, 
-PHROZEN SASU and / or Jean-Pierre LESUEUR shall not be responsible for any losses
-and/or damages due to the usage of the information on our app.
+🇺🇸 All source code and projects shared on this Github account by Jean-Pierre LESUEUR and his company, PHROZEN SAS, are provided "as is" without warranty of any kind, either expressed or implied. The user of this code assumes all responsibility for any issues or legal liabilities that may arise from the use, misuse, or distribution of this code. The user of this code also agrees to release Jean-Pierre LESUEUR and PHROZEN SAS from any and all liability for any damages or losses that may result from the use, misuse, or distribution of this code.
 
-By using our app, you hereby consent to our disclaimer and agree to its terms.
+By using this code, the user agrees to indemnify and hold Jean-Pierre LESUEUR and PHROZEN SAS harmless from any and all claims, liabilities, costs, and expenses arising from the use, misuse, or distribution of this code. The user also agrees not to hold Jean-Pierre LESUEUR or PHROZEN SAS responsible for any errors or omissions in the code, and to take full responsibility for ensuring that the code meets the user's needs.
 
-Any links contained in our app may lead to external sites are provided for
-convenience only. Any information or statements that appeared in these sites
-or app are not sponsored, endorsed, or otherwise approved by PHROZEN SASU and / or
-Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre LESUEUR
-cannot be held liable for the availability of, or the content located on or through it.
-Plus, any losses or damages occurred from using these contents or the internet
-generally.
+This disclaimer is subject to change without notice, and the user is responsible for checking for updates. If the user does not agree to the terms of this disclaimer, they should not use this code.
+
+---
+
+🇫🇷 Tout les codes sources et les projets partagés sur ce compte Github par Jean-Pierre LESUEUR et sa société, PHROZEN SAS, sont fournis "tels quels" sans aucune garantie, expresse ou implicite. L'utilisateur de ce code assume toute responsabilité pour les problèmes ou les responsabilités juridiques qui pourraient résulter de l'utilisation, de l'utilisation abusive ou de la diffusion de ce code. L'utilisateur de ce code accepte également de libérer Jean-Pierre LESUEUR et PHROZEN SAS de toute responsabilité pour tous dommages ou pertes pouvant résulter de l'utilisation, de l'utilisation abusive ou de la diffusion de ce code.
+
+En utilisant ce code, l'utilisateur accepte de garantir et de dégager Jean-Pierre LESUEUR et PHROZEN SAS de toutes réclamations, responsabilités, coûts et dépenses résultant de l'utilisation, de l'utilisation abusive ou de la diffusion de ce code. L'utilisateur accepte également de ne pas tenir Jean-Pierre LESUEUR ou PHROZEN SAS responsable des erreurs ou omissions dans le code et de prendre l'entière responsabilité de s'assurer que le code répond aux besoins de l'utilisateur.
+
+Cette clause de non-responsabilité est sujette à modification sans préavis et l'utilisateur est responsable de vérifier les mises à jour. Si l'utilisateur n'accepte pas les termes de cette clause de non-responsabilité, il ne doit pas utiliser ce code.
 
 ---
 
