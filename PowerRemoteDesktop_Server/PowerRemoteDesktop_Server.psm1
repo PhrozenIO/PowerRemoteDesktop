@@ -1,15 +1,11 @@
 <#-------------------------------------------------------------------------------
 
     Power Remote Desktop
-
-    In loving memory of my father. 
-    Thanks for all you've done.
-    you will remain in my heart forever.
-
+    
     .Developer
         Jean-Pierre LESUEUR (@DarkCoderSc)
         https://www.twitter.com/darkcodersc
-        https://github.com/DarkCoderSc
+        https://github.com/PhrozenIO
         www.phrozen.io
         jplesueur@phrozen.io
         PHROZEN
@@ -18,23 +14,6 @@
         Apache License
         Version 2.0, January 2004
         http://www.apache.org/licenses/
-
-    .Disclaimer
-        We are doing our best to prepare the content of this app. However, PHROZEN SASU and / or
-        Jean-Pierre LESUEUR cannot warranty the expressions and suggestions of the contents,
-        as well as its accuracy. In addition, to the extent permitted by the law, 
-        PHROZEN SASU and / or Jean-Pierre LESUEUR shall not be responsible for any losses
-        and/or damages due to the usage of the information on our app.
-
-        By using our app, you hereby consent to our disclaimer and agree to its terms.
-
-        Any links contained in our app may lead to external sites are provided for
-        convenience only. Any information or statements that appeared in these sites
-        or app are not sponsored, endorsed, or otherwise approved by PHROZEN SASU and / or
-        Jean-Pierre LESUEUR. For these external sites, PHROZEN SASU and / or Jean-Pierre LESUEUR
-        cannot be held liable for the availability of, or the content located on or through it.
-        Plus, any losses or damages occurred from using these contents or the internet
-        generally.
         
 -------------------------------------------------------------------------------#>
 
@@ -162,7 +141,7 @@ Add-Type @"
     }
 "@
 
-$global:PowerRemoteDesktopVersion = "4.0.0"
+$global:PowerRemoteDesktopVersion = "5.0.0"
 
 $global:HostSyncHash = [HashTable]::Synchronized(@{
     host = $host
@@ -236,7 +215,7 @@ function Write-Banner
     Write-Host "#" -NoNewLine -ForegroundColor White
     Write-Host "#" -ForegroundColor Red
     Write-Host "https://" -NoNewLine -ForegroundColor Green
-    Write-Host "www.github.com/darkcodersc"
+    Write-Host "www.github.com/PhrozenIO"
     Write-Host "https://" -NoNewLine -ForegroundColor Green
     Write-Host "www.phrozen.io" 
     Write-Host ""
@@ -448,348 +427,29 @@ function New-RandomPassword
     return $secureCandidate
 }
 
-function New-DefaultX509Certificate
+function Get-DefaultCertificateOrCreate
 {    
     <#
         .SYNOPSIS
-            Generate and install a new self-signed X509 Certificate and install on local machine.
-
-        .DESCRIPTION
-            This function is called only if no custom certificate are defined when starting a new Remote
-            Desktop Server.
-
-            Important Notice:
-                This function requires administrator privileges to enroll / install certificate on local machine.
-                If you don't provide your own certificate, you will need to run Remote Desktop Server through an
-                elevated PowerShell version.
-
-                You can generate your own certificate using the following OpenSSL commands:
-                    * openssl req -x509 -sha512 -nodes -days 365 -newkey rsa:4096 -keyout phrozen.key -out phrozen.crt
-                    * openssl pkcs12 -export -out phrozen.p12 -inkey phrozen.key -in phrozen.crt
-
-                Then use the CertificateFile option and use the p12 file.
-
-                You can also export the newly created certificate in Base64 and use it with EncodedCertificate option.
-                    * base64 -i phrozen.p12
-
-        .PARAMETER X509_CN
-            Type: String
-            Default: PowerRemoteDesktop.Server
-            Description: Certificate Common Name.
-
-        .PARAMETER X509_O
-            Type: String
-            Default: Phrozen 
-            Description: Certificate Organisation.
-
-        .PARAMETER X509_L
-            Type: String
-            Default: Maisons Laffitte
-            Description: Certificate Locality (City)
-
-        .PARAMETER X509_S
-            Type: String
-            Default: Yvelines
-            Description: Certificate State.
-
-        .PARAMETER X509_C
-            Type: String
-            Default: FR
-            Description: Certificate Company Name.
-
-        .PARAMETER X509_OU
-            Type: String
-            Default: Freeware
-            Description: Certificate Organizational Unit.
-
-        .PARAMETER HashAlgorithmName
-            Type: String
-            Default: SHA512
-            Description: Certificate Hash Algorithm.
-                         Example: SHA128, SHA256, SHA512...
-
-        .PARAMETER CertExpirationInDays
-            Type: Integer
-            Default: 365
-            Description: Certificate expiration in days.
+            Get default certificate from user store or create a new one.
     #>
     param (
-        [string] $X509_CN = "PowerRemoteDesktop.Server",
-        [string] $X509_O = "Phrozen",
-        [string] $X509_L = "Maisons Laffitte",
-        [string] $X509_S = "Yvelines",
-        [string] $X509_C = "FR",
-        [string] $X509_OU = "Freeware",
-        [string] $HashAlgorithmName = "SHA512",
+        [string] $SubjectName = "PowerRemoteDesktop.Server",
+        [string] $StorePath = "cert:\CurrentUser\My",
         [int] $CertExpirationInDays = 365
     )
 
-    enum X500NameFlags {
-        XCN_CERT_NAME_STR_NONE
-        XCN_CERT_SIMPLE_NAME_STR
-        XCN_CERT_OID_NAME_STR
-        XCN_CERT_X500_NAME_STR
-        XCN_CERT_XML_NAME_STR
-        XCN_CERT_NAME_STR_SEMICOLON_FLAG
-        XCN_CERT_NAME_STR_NO_PLUS_FLAG
-        XCN_CERT_NAME_STR_NO_QUOTING_FLAG
-        XCN_CERT_NAME_STR_CRLF_FLAG
-        XCN_CERT_NAME_STR_COMMA_FLAG
-        XCN_CERT_NAME_STR_REVERSE_FLAG
-        XCN_CERT_NAME_STR_FORWARD_FLAG
-        XCN_CERT_NAME_STR_AMBIGUOUS_SEPARATOR_FLAGS
-        XCN_CERT_NAME_STR_DISABLE_IE4_UTF8_FLAG
-        XCN_CERT_NAME_STR_ENABLE_T61_UNICODE_FLAG
-        XCN_CERT_NAME_STR_ENABLE_UTF8_UNICODE_FLAG
-        XCN_CERT_NAME_STR_FORCE_UTF8_DIR_STR_FLAG
-        XCN_CERT_NAME_STR_DISABLE_UTF8_DIR_STR_FLAG
-        XCN_CERT_NAME_STR_ENABLE_PUNYCODE_FLAG
-        XCN_CERT_NAME_STR_DS_ESCAPED
-    }
+    $certificates = Get-ChildItem -Path $StorePath | Where-Object { $_.Subject -eq "CN=" + $SubjectName }
 
-    enum CAPICOM_KEY_SPEC {
-        CAPICOM_KEY_SPEC_KEYEXCHANGE = 1
-        CAPICOM_KEY_SPEC_SIGNATURE = 2
-    }
-    
-    enum ObjectIdGroupId {
-        XCN_CRYPT_ANY_GROUP_ID = 0
-        XCN_CRYPT_ENCRYPT_ALG_OID_GROUP_ID = 2
-        XCN_CRYPT_ENHKEY_USAGE_OID_GROUP_ID = 7
-        XCN_CRYPT_EXT_OR_ATTR_OID_GROUP_ID = 6
-        XCN_CRYPT_FIRST_ALG_OID_GROUP_ID = 1
-        XCN_CRYPT_GROUP_ID_MASK = 65535
-        XCN_CRYPT_HASH_ALG_OID_GROUP_ID = 1
-        XCN_CRYPT_KEY_LENGTH_MASK = 268369920
-        XCN_CRYPT_LAST_ALG_OID_GROUP_ID = 4
-        XCN_CRYPT_LAST_OID_GROUP_ID = 10
-        XCN_CRYPT_OID_DISABLE_SEARCH_DS_FLAG = -2147483648
-        XCN_CRYPT_OID_INFO_OID_GROUP_BIT_LEN_MASK = 268369920
-        XCN_CRYPT_OID_INFO_OID_GROUP_BIT_LEN_SHIFT = 16
-        XCN_CRYPT_OID_PREFER_CNG_ALGID_FLAG = 1073741824
-        XCN_CRYPT_POLICY_OID_GROUP_ID = 8
-        XCN_CRYPT_PUBKEY_ALG_OID_GROUP_ID = 3
-        XCN_CRYPT_RDN_ATTR_OID_GROUP_ID = 5
-        XCN_CRYPT_SIGN_ALG_OID_GROUP_ID = 4
-        XCN_CRYPT_TEMPLATE_OID_GROUP_ID = 9
-    }    
-
-    enum X509ContentType {
-        Authenticode = 6
-        Cert = 1
-        Pfx = 3
-        Pkcs12 = 3
-        Pkcs7 = 5
-        SerializedCert = 2
-        SerializedStore = 4
-        Unknown = 0
-    }
-
-    enum X509PrivateKeyExportFlags {
-        XCN_NCRYPT_ALLOW_EXPORT_NONE
-        XCN_NCRYPT_ALLOW_EXPORT_FLAG
-        XCN_NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG
-        XCN_NCRYPT_ALLOW_ARCHIVING_FLAG
-        XCN_NCRYPT_ALLOW_PLAINTEXT_ARCHIVING_FLAG
-    }
-
-    enum ObjectIdPublicKeyFlags {
-        XCN_CRYPT_OID_INFO_PUBKEY_ANY
-        XCN_CRYPT_OID_INFO_PUBKEY_SIGN_KEY_FLAG
-        XCN_CRYPT_OID_INFO_PUBKEY_ENCRYPT_KEY_FLAG
-    }
-
-    enum X509CertificateEnrollmentContext {
-        ContextNone
-        ContextUser
-        ContextMachine
-        ContextAdministratorForceMachine
-    }
-
-    enum InstallResponseRestrictionFlags {
-        AllowNone
-        AllowNoOutstandingRequest
-        AllowUntrustedCertificate
-        AllowUntrustedRoot
-    } 
-
-    enum EncodingType {
-        XCN_CRYPT_STRING_BASE64HEADER
-        XCN_CRYPT_STRING_BASE64
-        XCN_CRYPT_STRING_BINARY
-        XCN_CRYPT_STRING_BASE64REQUESTHEADER
-        XCN_CRYPT_STRING_HEX
-        XCN_CRYPT_STRING_HEXASCII
-        XCN_CRYPT_STRING_BASE64_ANY
-        XCN_CRYPT_STRING_ANY
-        XCN_CRYPT_STRING_HEX_ANY
-        XCN_CRYPT_STRING_BASE64X509CRLHEADER
-        XCN_CRYPT_STRING_HEXADDR
-        XCN_CRYPT_STRING_HEXASCIIADDR
-        XCN_CRYPT_STRING_HEXRAW
-        XCN_CRYPT_STRING_BASE64URI
-        XCN_CRYPT_STRING_ENCODEMASK
-        XCN_CRYPT_STRING_CHAIN
-        XCN_CRYPT_STRING_TEXT
-        XCN_CRYPT_STRING_PERCENTESCAPE
-        XCN_CRYPT_STRING_HASHDATA
-        XCN_CRYPT_STRING_STRICT
-        XCN_CRYPT_STRING_NOCRLF
-        XCN_CRYPT_STRING_NOCR
-    }
-
-    # Create X.509 Certificate
-    $distinguishedName = New-Object -ComObject 'X509Enrollment.CX500DistinguishedName.1'
-
-    # Feel free to edit bellow information with your own.
-    $distinguishedName.Encode(
-        "CN=${X509_CN},O=${X509_O},L=${X509_L},S=${X509_S},C=${X509_C},OU=${X509_OU}",
-        [int][X500NameFlags]::XCN_CERT_NAME_STR_NONE
-    )
-
-    # Generate new Private Key    
-    $privateKey = New-Object -ComObject 'X509Enrollment.CX509PrivateKey.1'
-    $privateKey.ProviderName = "Microsoft RSA SChannel Cryptographic Provider"  
-
-    $privateKey.ExportPolicy = [int][X509PrivateKeyExportFlags]::XCN_NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG
-    $privateKey.KeySpec = [int][CAPICOM_KEY_SPEC]::CAPICOM_KEY_SPEC_KEYEXCHANGE
-    $privateKey.Length = 4096
-    $privateKey.MachineContext = $true
-
-    $privateKey.Create()
-
-    # Create Hash Algorithm Object
-    $hashAlgorithm = New-Object -ComObject 'X509Enrollment.CObjectId.1'
-    $hashAlgorithm.InitializeFromAlgorithmName(
-        [int][ObjectIdGroupId]::XCN_CRYPT_FIRST_ALG_OID_GROUP_ID,
-        [int][ObjectIdGroupId]::XCN_CRYPT_ANY_GROUP_ID,
-        [int][ObjectIdPublicKeyFlags]::XCN_CRYPT_OID_INFO_PUBKEY_ANY,
-        $HashAlgorithmName
-    )
-    
-    # Generate Certificate
-    $certificate = New-Object -ComObject 'X509Enrollment.CX509CertificateRequestCertificate.1'
-
-    $certificate.InitializeFromPrivateKey(
-        [int][X509CertificateEnrollmentContext]::ContextAdministratorForceMachine,
-        $privateKey,
-        ""
-    )
-
-    $certificate.Subject = $distinguishedName     
-    $certificate.Issuer = $distinguishedName     
-
-    $certificate.HashAlgorithm = $hashAlgorithm
-
-    $certificate.NotBefore = [DateTime]::Now.AddDays(-1)
-    $certificate.NotAfter = [DateTime]::Now.AddDays($CertExpirationInDays)
-
-    $certificate.Encode()
-
-    # Enroll
-    $enroll = New-Object -ComObject 'X509Enrollment.CX509Enrollment.1'
-    $enroll.InitializeFromRequest($certificate)
-    $enroll.CertificateFriendlyName = "Phrozen, PowerRemoteDesktop Server"
-
-    $certificateContent = $enroll.CreateRequest()
-
-    # Install Certificate
-    $Enroll.InstallResponse(
-        [int][InstallResponseRestrictionFlags]::AllowUntrustedCertificate,
-        $certificateContent,
-        [int][EncodingType]::XCN_CRYPT_STRING_BASE64,
-        "" # No password
-    )   
-}
-
-function Get-X509CertificateFromStore
-{
-    <#
-        .SYNOPSIS
-            Retrieve a X509 Certificate from local machine certificate store using its Subject Name.
-
-        .DESCRIPTION
-            Notice, as for generating a new self-signed certificate. This function requires an administrator
-            privilege to recover the complete certificate (including the private key).
-
-            It then needs to be run inside an elevated PowerShell session.
-
-            To avoid this issue, as for generating a self-signed certificate, you must provide your own
-            certificate when starting a new Remote Desktop Server.
-
-        .PARAMETER SubjectName
-            Type: String
-            Default: PowerRemoteDesktop.Server
-            Description: The certificate Subject Name to retrieve from local machine certificate store.
-
-        .EXAMPLE
-            Get-X509CertificateFromStore -SubjectName "PowerRemoteDesktop.Server"
-    #>
-    param (
-        [string] $SubjectName = "PowerRemoteDesktop.Server"
-    )
-
-    enum StoreLocation {
-        CurrentUser = 1
-        LocalMachine = 2
-    }
-
-    enum OpenFlags {
-        IncludeArchived = 8
-        MaxAllowed = 2
-        OpenExistingOnly = 4
-        ReadOnly = 0
-        ReadWrite = 1
-    }
-
-    enum StoreName {
-        AddressBook = 1
-        AuthRoot = 2
-        CertificateAuthority = 3
-        Disallowed = 4
-        My = 5
-        Root = 6
-        TrustedPeople = 7
-        TrustedPublisher = 8
-    }
-
-    enum X509FindType {
-        FindByApplicationPolicy = 10
-        FindByCertificatePolicy = 11
-        FindByExtension = 12
-        FindByIssuerDistinguishedName = 4
-        FindByIssuerName = 3
-        FindByKeyUsage = 13
-        FindBySerialNumber = 5
-        FindBySubjectDistinguishedName = 2
-        FindBySubjectKeyIdentifier = 14
-        FindBySubjectName = 1
-        FindByTemplateName = 9
-        FindByThumbprint = 0
-        FindByTimeExpired = 8
-        FindByTimeNotYetValid = 7
-        FindByTimeValid = 6
-    }
-
-    $store = New-Object System.Security.Cryptography.X509Certificates.X509Store(
-        [StoreName]::My,
-        [StoreLocation]::LocalMachine
-    )
-
-    $store.Open([OpenFlags]::ReadOnly)
-    try
+    if (-not $certificates)
     {
-        $certCollection = $store.Certificates
-
-        return $certCollection.Find(
-            [X509FindType]::FindBySubjectName,
-             $SubjectName,
-             $false
-        )[0]        
+        return New-SelfSignedCertificate -CertStoreLocation $StorePath `
+                -NotAfter (Get-Date).AddDays($CertExpirationInDays) `
+                -Subject $SubjectName
     }
-    finally
+    else
     {
-        $store.Close()   
+        return $certificates[0]
     }
 }
 
@@ -2462,27 +2122,9 @@ class SessionManager {
 
         if (-not $Certificate)
         {
-            Write-Verbose "Custom X509 Certificate not specified."
+            Write-Verbose "No custom certificate specified, using default X509 Certificate (Not Recommended)."
 
-            $this.Certificate = Get-X509CertificateFromStore        
-            if (-not $this.Certificate)
-            {
-                Write-Verbose "Generate and Install a new local X509 Certificate."
-
-                New-DefaultX509Certificate
-                
-                Write-verbose "Certificate was successfully installed on local machine. Opening..."
-
-                $this.Certificate = Get-X509CertificateFromStore
-                if (-not $this.Certificate)
-                {
-                    throw "Could not open our new local certificate."
-                }
-            }
-            else
-            {
-                Write-Verbose "Default X509 Certificate was specified."            
-            }
+            $this.Certificate = Get-DefaultCertificateOrCreate
         }
         else
         {
@@ -3018,14 +2660,6 @@ function Invoke-RemoteDesktopServer
         Write-Banner    
 
         $null = [User32]::SetProcessDPIAware()
-
-        if (-not (Test-Administrator) -and -not $CertificateFile -and -not $EncodedCertificate)
-        {
-            throw "Insuficient Privilege`r`n`
-            When a custom X509 Certificate is not specified, server will generate and install a default one on local machine store.`r`n`
-            This operation requires Administrator Privilege.`r`n`
-            Specify your own X509 Certificate or run the server in a elevated prompt."
-        }
 
         $Certificate = $null
 
