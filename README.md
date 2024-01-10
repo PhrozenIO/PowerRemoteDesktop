@@ -36,7 +36,7 @@ You can install PowerShell 7 for Windows [here](https://docs.microsoft.com/fr-fr
 * Remote Desktop Streaming: This feature allows you to stream the desktop of the remote computer to your own device. The streaming supports HDPI and scaling, providing a high-quality display on various screens and resolutions.
 * Remote Control: With this feature, you can control the mouse (including moves, clicks, and wheel) and keyboard of the remote computer as if you were sitting in front of it.
 * Secure: To protect the privacy and security of your remote desktop sessions, the module uses TLSv1.2 or 1.3 to encrypt the network traffic. Access to the server is granted through a challenge-based authentication mechanism that requires a user-defined complex password.
-* Network Traffic Encryption: The module supports encrypting the network traffic using either a default X509 certificate (which requires administrator privileges) or your own custom X509 certificate.
+* Network Traffic Encryption: The module supports encrypting the network traffic using either a default X509 certificate or your own custom X509 certificate (recommended).
 * Server Certificate Fingerprint Validation: To ensure the authenticity of the server, the module allows you to validate the fingerprint of the server certificate and optionally persist this validation between sessions.
 * Clipboard Synchronization: This feature allows you to synchronize the clipboard text between the viewer (your device) and the server (the remote computer). You can easily copy and paste text between the two systems.
 * Mouse Cursor Icon Synchronization: The module also synchronizes the state of the mouse cursor icon between the viewer (virtual desktop) and the server, providing a more seamless and intuitive remote desktop experience.
@@ -56,7 +56,7 @@ Install-Module -Name PowerRemoteDesktop_Server
 Invoke-RemoteDesktopServer -CertificateFile "<certificate_location>"
 ````
 
-If you want to avoid using your own certificate and prefer not to go through the process of creating one, you can remove the 'CertificateFile' option and run PowerShell as an administrator instead.
+If you want to avoid using your own certificate and prefer not to go through the process of creating one, you can remove the 'CertificateFile'. A default certificate will be created on local user certificate store (not recommended)
 
 ````powershell
 Install-Module -Name PowerRemoteDesktop_Viewer
@@ -368,7 +368,7 @@ Invoke-RemoteDesktopServer
 ##### ⚠️ Important Notices
 
 1. It is recommended to use SecurePassword instead of a plain-text password, even if the plain-text password is being converted to a SecureString.
-2. If you do not specify a custom certificate using 'CertificateFile' or 'EncodedCertificate', a default self-signed certificate will be generated and installed on the local machine (if one does not already exist). This requires administrator privileges. To run the server with a non-privileged account, you must provide your own certificate location.
+2. If you do not specify a custom certificate using 'CertificateFile' or 'EncodedCertificate', a default self-signed certificate will be generated and installed user certificate store.
 3. If you do not specify a SecurePassword or Password, a random, complex password will be generated and displayed in the terminal (this password is temporary).
 
 ##### Examples
@@ -402,8 +402,6 @@ A new PowerShell terminal should appear on your desktop as **NT AUTHORITY/System
 If you follow the steps above, a new PowerShell terminal should appear on your desktop running as the 'NT AUTHORITY/System' user.
 
 From this terminal, you can run the Power Remote Desktop server command and enable the 'LogonUI' option for future Power Remote Desktop viewer connections. 
-
-It's worth noting that if you don't use your own X509 certificate, you will need administrator privileges to create a new server. However, you can easily create your own X509 certificate using tools such as the OpenSSL command line tool.
 
 ##### Generate your Certificate
 
@@ -522,6 +520,10 @@ You can then pass the output base64 certificate file to parameter `EncodedCertif
 * WIN Keyboard Key supported.
 * Virtual Desktop window opens above the terminal.
 * Server now support LogonUI / Winlogon (Beta)
+
+### TBD
+
+* The process of creating and using X509 certificates has been streamlined, and a default certificate is now automatically installed in the current user's certificate store. As a result, there is no longer a requirement to run PowerRemoteDesktop_Server as an administrator when no specific certificate is specified.
 
 ### List of ideas and TODO
 
